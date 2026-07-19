@@ -8,37 +8,86 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import psycopg2
+import psycopg2.extras
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "mjerenja.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 ZAGREB_TZ = ZoneInfo("Europe/Zagreb")
 OPTIONAL_TOKEN = os.environ.get("PKZ_TTN_TOKEN", "").strip()
+MEASUREMENT_INTERVAL_SECONDS = int(os.environ.get("PKZ_MEASUREMENT_INTERVAL_SECONDS", str(4 * 60 * 60)))
+ACTIVE_THRESHOLD_SECONDS = int(os.environ.get("PKZ_ACTIVE_THRESHOLD_SECONDS", str(MEASUREMENT_INTERVAL_SECONDS + 30 * 60)))
 
 app = Flask(__name__, static_folder=None)
 
 
+def koristi_postgres() -> bool:
+    return bool(DATABASE_URL)
+
+
+def get_conn():
+    if koristi_postgres():
+        return psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def execute(conn, sql_sqlite: str, params: tuple = (), sql_postgres: str | None = None):
+    sql = sql_postgres if koristi_postgres() and sql_postgres else sql_sqlite
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    return cur
+
+
 def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS measurements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                received_at_utc TEXT NOT NULL,
-                datum TEXT NOT NULL,
-                vrijeme TEXT NOT NULL,
-                device_id TEXT,
-                pm25 REAL,
-                pm10 REAL,
-                temperatura REAL,
-                vlaga REAL,
-                co2 REAL,
-                tlak REAL,
-                raw_json TEXT NOT NULL
+    with get_conn() as conn:
+        if koristi_postgres():
+            execute(
+                conn,
+                "",
+                sql_postgres="""
+                CREATE TABLE IF NOT EXISTS measurements (
+                    id SERIAL PRIMARY KEY,
+                    received_at_utc TEXT NOT NULL,
+                    datum TEXT NOT NULL,
+                    vrijeme TEXT NOT NULL,
+                    device_id TEXT,
+                    pm25 DOUBLE PRECISION,
+                    pm10 DOUBLE PRECISION,
+                    temperatura DOUBLE PRECISION,
+                    vlaga DOUBLE PRECISION,
+                    co2 DOUBLE PRECISION,
+                    tlak DOUBLE PRECISION,
+                    raw_json TEXT NOT NULL
+                )
+                """,
             )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
+            execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
+        else:
+            execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS measurements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    received_at_utc TEXT NOT NULL,
+                    datum TEXT NOT NULL,
+                    vrijeme TEXT NOT NULL,
+                    device_id TEXT,
+                    pm25 REAL,
+                    pm10 REAL,
+                    temperatura REAL,
+                    vlaga REAL,
+                    co2 REAL,
+                    tlak REAL,
+                    raw_json TEXT NOT NULL
+                )
+                """,
+            )
+            execute(conn, "CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
+        conn.commit()
 
 
 def to_float(value: Any) -> float | None:
@@ -112,49 +161,94 @@ def measurement_from_ttn(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def insert_measurement(measurement: dict[str, Any], raw_payload: dict[str, Any]) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO measurements
-            (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                measurement["received_at_utc"],
-                measurement["datum"],
-                measurement["vrijeme"],
-                measurement["device_id"],
-                measurement["pm25"],
-                measurement["pm10"],
-                measurement["temperatura"],
-                measurement["vlaga"],
-                measurement["co2"],
-                measurement["tlak"],
-                json.dumps(raw_payload, ensure_ascii=False),
-            ),
-        )
-        return int(cur.lastrowid)
+    sql_sqlite = """
+        INSERT INTO measurements
+        (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    sql_postgres = """
+        INSERT INTO measurements
+        (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    values = (
+        measurement["received_at_utc"],
+        measurement["datum"],
+        measurement["vrijeme"],
+        measurement["device_id"],
+        measurement["pm25"],
+        measurement["pm10"],
+        measurement["temperatura"],
+        measurement["vlaga"],
+        measurement["co2"],
+        measurement["tlak"],
+        json.dumps(raw_payload, ensure_ascii=False),
+    )
+    with get_conn() as conn:
+        cur = execute(conn, sql_sqlite, values, sql_postgres)
+        if koristi_postgres():
+            measurement_id = int(cur.fetchone()[0])
+        else:
+            measurement_id = int(cur.lastrowid)
+        conn.commit()
+        return measurement_id
 
 
-def rows_to_measurements(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+def row_value(row: Any, key: str) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[key]
+
+
+def rows_to_measurements(rows: list[Any]) -> list[dict[str, Any]]:
     measurements = []
     for row in rows:
         measurements.append(
             {
-                "id": row["id"],
-                "received_at_utc": row["received_at_utc"],
-                "datum": row["datum"],
-                "vrijeme": row["vrijeme"],
-                "device_id": row["device_id"],
-                "pm25": row["pm25"],
-                "pm10": row["pm10"],
-                "temperatura": row["temperatura"],
-                "vlaga": row["vlaga"],
-                "co2": row["co2"],
-                "tlak": row["tlak"],
+                "id": row_value(row, "id"),
+                "received_at_utc": row_value(row, "received_at_utc"),
+                "datum": row_value(row, "datum"),
+                "vrijeme": row_value(row, "vrijeme"),
+                "device_id": row_value(row, "device_id"),
+                "pm25": row_value(row, "pm25"),
+                "pm10": row_value(row, "pm10"),
+                "temperatura": row_value(row, "temperatura"),
+                "vlaga": row_value(row, "vlaga"),
+                "co2": row_value(row, "co2"),
+                "tlak": row_value(row, "tlak"),
             }
         )
     return measurements
+
+
+def fetch_measurements(limit: int = 1000) -> list[dict[str, Any]]:
+    sql_sqlite = """
+        SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
+        FROM measurements
+        ORDER BY received_at_utc DESC
+        LIMIT ?
+    """
+    sql_postgres = """
+        SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
+        FROM measurements
+        ORDER BY received_at_utc DESC
+        LIMIT %s
+    """
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(sql_postgres, (limit,))
+            rows = cur.fetchall()
+        else:
+            cur = execute(conn, sql_sqlite, (limit,))
+            rows = cur.fetchall()
+    return rows_to_measurements(rows)
+
+
+def fetch_latest() -> dict[str, Any] | None:
+    rows = fetch_measurements(1)
+    return rows[0] if rows else None
 
 
 @app.route("/ttn", methods=["POST"])
@@ -183,51 +277,18 @@ def api_measurements():
     except ValueError:
         limit_int = 1000
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-            FROM measurements
-            ORDER BY received_at_utc DESC
-            LIMIT ?
-            """,
-            (limit_int,),
-        ).fetchall()
-
-    return jsonify(rows_to_measurements(rows))
+    return jsonify(fetch_measurements(limit_int))
 
 
 @app.route("/api/latest", methods=["GET"])
 def api_latest():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            """
-            SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-            FROM measurements
-            ORDER BY received_at_utc DESC
-            LIMIT 1
-            """
-        ).fetchone()
-
-    return jsonify(rows_to_measurements([row])[0] if row else {})
+    return jsonify(fetch_latest() or {})
 
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            """
-            SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-            FROM measurements
-            ORDER BY received_at_utc DESC
-            LIMIT 1
-            """
-        ).fetchone()
-
-    if not row:
+    latest = fetch_latest()
+    if not latest:
         return jsonify({
             "ok": True,
             "has_data": False,
@@ -238,26 +299,21 @@ def api_status():
             "last_measurement": None
         })
 
-    latest = rows_to_measurements([row])[0]
     try:
-        received_at = datetime.fromisoformat(row["received_at_utc"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        received_at = datetime.fromisoformat(str(latest["received_at_utc"]).replace("Z", "+00:00")).astimezone(timezone.utc)
     except Exception:
         received_at = datetime.now(timezone.utc)
 
     age_seconds = max(0, int((datetime.now(timezone.utc) - received_at).total_seconds()))
 
-    if age_seconds <= 180:
+    if age_seconds <= ACTIVE_THRESHOLD_SECONDS:
         status = "active"
         text = "Sustav aktivan"
-        description = "Mjerenja redovito dolaze iz TTN-a."
-    elif age_seconds <= 600:
-        status = "offline"
-        text = "Sustav neaktivan"
-        description = "Nije primljeno novo mjerenje u očekivanom vremenu."
+        description = "Zadnje mjerenje je unutar očekivanog intervala slanja."
     else:
         status = "offline"
         text = "Sustav neaktivan"
-        description = "Dulje vrijeme nije primljeno novo mjerenje."
+        description = "Nije primljeno novo mjerenje u očekivanom intervalu."
 
     return jsonify({
         "ok": True,
@@ -272,24 +328,13 @@ def api_status():
 
 @app.route("/data.js", methods=["GET"])
 def data_js():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-            FROM measurements
-            ORDER BY received_at_utc DESC
-            LIMIT 5000
-            """
-        ).fetchall()
-
-    content = "window.PKZ_MJERENJA = " + json.dumps(rows_to_measurements(rows), ensure_ascii=False) + ";\n"
+    content = "window.PKZ_MJERENJA = " + json.dumps(fetch_measurements(5000), ensure_ascii=False) + ";\n"
     return Response(content, mimetype="application/javascript")
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "database": str(DB_PATH)})
+    return jsonify({"ok": True, "database": "postgres" if koristi_postgres() else str(DB_PATH)})
 
 
 @app.route("/", methods=["GET"])
@@ -302,6 +347,7 @@ def static_files(path: str):
     return send_from_directory(BASE_DIR, path)
 
 
+init_db()
+
 if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=True)

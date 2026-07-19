@@ -1884,6 +1884,8 @@ inicijalizirajStatistiku();
 
 
 /* Dinamički status sustava - provjera stvarnog zadnjeg TTN mjerenja */
+const PKZ_INTERVAL_MJERENJA_SEKUNDE = 4 * 60 * 60;
+const PKZ_GRANICA_AKTIVNOG_SUSTAVA_SEKUNDE = PKZ_INTERVAL_MJERENJA_SEKUNDE + 30 * 60;
 const pkzStatusElementi = document.querySelectorAll(".status-online");
 const statusStanjeUredjaja = document.getElementById("status-stanje-uredjaja");
 const statusKomunikacija = document.getElementById("status-komunikacija");
@@ -1942,7 +1944,7 @@ function pkzStatusIzMjerenja(mjerenje) {
         ? Math.max(0, Math.floor((Date.now() - datumMjerenja.getTime()) / 1000))
         : null;
 
-    if (starostSekundi !== null && starostSekundi <= 180) {
+    if (starostSekundi !== null && starostSekundi <= PKZ_GRANICA_AKTIVNOG_SUSTAVA_SEKUNDE) {
         return {
             status: "active",
             text: "Sustav aktivan",
@@ -1952,11 +1954,11 @@ function pkzStatusIzMjerenja(mjerenje) {
         };
     }
 
-    if (starostSekundi !== null && starostSekundi <= 600) {
+    if (starostSekundi !== null && starostSekundi <= PKZ_GRANICA_AKTIVNOG_SUSTAVA_SEKUNDE + 60 * 60) {
         return {
             status: "offline",
             text: "Sustav neaktivan",
-            description: "Nije primljeno novo mjerenje u očekivanom vremenu.",
+            description: "Nije primljeno novo mjerenje u očekivanom intervalu.",
             age_seconds: starostSekundi,
             last_measurement: mjerenje
         };
