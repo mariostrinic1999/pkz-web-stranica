@@ -248,10 +248,10 @@ function ucitajMjerenjaSaServera() {
 }
 
 const stvarnaMjerenja = ucitajMjerenjaSaServera();
-const povijestMjerenja = (stvarnaMjerenja.length > 0
-    ? stvarnaMjerenja
-    : filtrirajBuducaMjerenja(generirajPovijestMjerenja("2026-01-01", 365))
-).sort(usporediMjerenjaOdNajnovijeg);
+
+// Online verzija: prikazuju se samo stvarna mjerenja iz baze.
+// Ako je Neon baza prazna, stranica ostaje prazna i ne generira probne podatke.
+const povijestMjerenja = stvarnaMjerenja.sort(usporediMjerenjaOdNajnovijeg);
 
 /* Zadnje mjerenje za početnu */
 const zadnjeMjerenje = povijestMjerenja[0];
@@ -281,12 +281,12 @@ const vlagaElement = document.getElementById("vlaga");
 const co2Element = document.getElementById("co2");
 const tlakElement = document.getElementById("tlak");
 
-if (pm25Element) pm25Element.innerText = mjerenja.pm25 + " µg/m³";
-if (pm10Element) pm10Element.innerText = mjerenja.pm10 + " µg/m³";
-if (tempElement) tempElement.innerText = mjerenja.temperatura + " °C";
-if (vlagaElement) vlagaElement.innerText = mjerenja.vlaga + " %";
-if (co2Element) co2Element.innerText = mjerenja.co2 + " ppm";
-if (tlakElement) tlakElement.innerText = mjerenja.tlak + " hPa";
+if (pm25Element) pm25Element.innerText = zadnjeMjerenje ? mjerenja.pm25 + " µg/m³" : "--";
+if (pm10Element) pm10Element.innerText = zadnjeMjerenje ? mjerenja.pm10 + " µg/m³" : "--";
+if (tempElement) tempElement.innerText = zadnjeMjerenje ? mjerenja.temperatura + " °C" : "--";
+if (vlagaElement) vlagaElement.innerText = zadnjeMjerenje ? mjerenja.vlaga + " %" : "--";
+if (co2Element) co2Element.innerText = zadnjeMjerenje ? mjerenja.co2 + " ppm" : "--";
+if (tlakElement) tlakElement.innerText = zadnjeMjerenje ? mjerenja.tlak + " hPa" : "--";
 
 /* Kvaliteta zraka i alarm */
 const kvalitetaKartica = document.getElementById("kvaliteta-kartica");
@@ -1193,17 +1193,7 @@ function generirajPodatkeZaZadnja24Sata() {
             }));
     }
 
-    const oznake = generirajOznakeZaZadnja24Sata();
-
-    return oznake.map((sat) => ({
-        sat,
-        pm25: 0,
-        pm10: 0,
-        temperatura: 0,
-        vlaga: 0,
-        co2: 0,
-        tlak: 0
-    }));
+    return [];
 }
 
 /* Tablica zadnja 24 sata na početnoj */
@@ -1215,6 +1205,13 @@ function popuniTablicuZadnja24h() {
     const podaci24h = generirajPodatkeZaZadnja24Sata();
     tablicaZadnja24hBody.innerHTML = "";
 
+    if (!podaci24h.length) {
+        const red = document.createElement("tr");
+        red.innerHTML = `<td colspan="7">Nema mjerenja u bazi.</td>`;
+        tablicaZadnja24hBody.appendChild(red);
+        return;
+    }
+
     podaci24h.forEach((mjerenje) => {
         const red = document.createElement("tr");
 
@@ -1222,7 +1219,7 @@ function popuniTablicuZadnja24h() {
         const klasaPM10 = odrediKlasuPM10(mjerenje.pm10);
 
         red.innerHTML = `
-            <td>${mjerenje.sat}:00</td>
+            <td>${mjerenje.sat}</td>
             <td>${mjerenje.temperatura}</td>
             <td>${mjerenje.vlaga}</td>
             <td>${mjerenje.tlak}</td>
