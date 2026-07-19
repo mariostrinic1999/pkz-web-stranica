@@ -23,6 +23,15 @@ ACTIVE_THRESHOLD_SECONDS = int(os.environ.get("PKZ_ACTIVE_THRESHOLD_SECONDS", st
 app = Flask(__name__, static_folder=None)
 
 
+@app.after_request
+def pkz_no_cache(response):
+    if request.path.startswith("/api/") or request.path == "/data.js":
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def koristi_postgres() -> bool:
     return bool(DATABASE_URL)
 

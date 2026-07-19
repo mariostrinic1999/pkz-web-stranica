@@ -250,7 +250,7 @@ function ucitajMjerenjaSaServera() {
 const stvarnaMjerenja = ucitajMjerenjaSaServera();
 
 // Online verzija: prikazuju se samo stvarna mjerenja iz baze.
-// Ako je Neon baza prazna, stranica ostaje prazna i ne generira probne podatke.
+// Ako je baza prazna, ne generiraju se probni/demo podaci.
 const povijestMjerenja = stvarnaMjerenja.sort(usporediMjerenjaOdNajnovijeg);
 
 /* Zadnje mjerenje za početnu */
@@ -281,12 +281,12 @@ const vlagaElement = document.getElementById("vlaga");
 const co2Element = document.getElementById("co2");
 const tlakElement = document.getElementById("tlak");
 
-if (pm25Element) pm25Element.innerText = zadnjeMjerenje ? mjerenja.pm25 + " µg/m³" : "--";
-if (pm10Element) pm10Element.innerText = zadnjeMjerenje ? mjerenja.pm10 + " µg/m³" : "--";
-if (tempElement) tempElement.innerText = zadnjeMjerenje ? mjerenja.temperatura + " °C" : "--";
-if (vlagaElement) vlagaElement.innerText = zadnjeMjerenje ? mjerenja.vlaga + " %" : "--";
-if (co2Element) co2Element.innerText = zadnjeMjerenje ? mjerenja.co2 + " ppm" : "--";
-if (tlakElement) tlakElement.innerText = zadnjeMjerenje ? mjerenja.tlak + " hPa" : "--";
+if (pm25Element) pm25Element.innerText = mjerenja.pm25 + " µg/m³";
+if (pm10Element) pm10Element.innerText = mjerenja.pm10 + " µg/m³";
+if (tempElement) tempElement.innerText = mjerenja.temperatura + " °C";
+if (vlagaElement) vlagaElement.innerText = mjerenja.vlaga + " %";
+if (co2Element) co2Element.innerText = mjerenja.co2 + " ppm";
+if (tlakElement) tlakElement.innerText = mjerenja.tlak + " hPa";
 
 /* Kvaliteta zraka i alarm */
 const kvalitetaKartica = document.getElementById("kvaliteta-kartica");
@@ -1219,7 +1219,7 @@ function popuniTablicuZadnja24h() {
         const klasaPM10 = odrediKlasuPM10(mjerenje.pm10);
 
         red.innerHTML = `
-            <td>${mjerenje.sat}</td>
+            <td>${mjerenje.sat}:00</td>
             <td>${mjerenje.temperatura}</td>
             <td>${mjerenje.vlaga}</td>
             <td>${mjerenje.tlak}</td>
@@ -2105,3 +2105,38 @@ function pkzOsvjeziStatusSustava() {
 
 pkzOsvjeziStatusSustava();
 setInterval(pkzOsvjeziStatusSustava, 30000);
+
+
+/* Automatska provjera novih mjerenja.
+   Ovo NE čeka 4 sata. Provjerava Render API svakih 30 sekundi.
+   Ako se u bazi pojavi novo mjerenje, stranica se automatski osvježi
+   kako bi tablica, graf i kartice učitali nove podatke iz data.js. */
+const pkzTrenutniKljucMjerenja = zadnjeMjerenje
+    ? String(zadnjeMjerenje.id || zadnjeMjerenje.received_at_utc || zadnjeMjerenje.datum + " " + zadnjeMjerenje.vrijeme)
+    : "";
+
+function pkzKljucMjerenja(mjerenje) {
+    if (!mjerenje) return "";
+    return String(mjerenje.id || mjerenje.received_at_utc || mjerenje.datum + " " + mjerenje.vrijeme || "");
+}
+
+function pkzProvjeriNovoMjerenje() {
+    fetch("/api/latest?ts=" + Date.now(), { cache: "no-store" })
+        .then((odgovor) => {
+            if (!odgovor.ok) throw new Error("Zadnje mjerenje nije dostupno");
+            return odgovor.json();
+        })
+        .then((mjerenje) => {
+            const noviKljuc = pkzKljucMjerenja(mjerenje);
+
+            if (noviKljuc && noviKljuc !== pkzTrenutniKljucMjerenja) {
+                window.location.reload();
+            }
+        })
+        .catch(() => {
+            // Ako API trenutno nije dostupan, ne ruši prikaz stranice.
+        });
+}
+
+pkzProvjeriNovoMjerenje();
+setInterval(pkzProvjeriNovoMjerenje, 30000);
