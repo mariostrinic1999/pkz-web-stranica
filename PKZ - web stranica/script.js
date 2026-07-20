@@ -234,7 +234,9 @@ function ucitajMjerenjaSaServera() {
             temperatura: Number(mjerenje.temperatura),
             vlaga: Number(mjerenje.vlaga),
             co2: Number(mjerenje.co2),
-            tlak: Number(mjerenje.tlak)
+            tlak: Number(mjerenje.tlak),
+            location_id: mjerenje.location_id || null,
+            location_name: mjerenje.location_name || ""
         }))
         .filter((mjerenje) => {
             return mjerenje.datum && mjerenje.vrijeme &&
@@ -248,6 +250,7 @@ function ucitajMjerenjaSaServera() {
 }
 
 const stvarnaMjerenja = ucitajMjerenjaSaServera();
+const aktivnaLokacijaServer = window.PKZ_AKTIVNA_LOKACIJA || null;
 
 // Online verzija: prikazuju se samo stvarna mjerenja iz baze.
 // Ako je baza prazna, ne generiraju se probni/demo podaci.
@@ -1322,7 +1325,7 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
     });
 }
 
-/* Karta i upravljanje lokacijama */
+/* Karta i upravljanje lokacijama - lokacije su spremljene u bazi */
 const mapaElement = document.getElementById("mapa");
 const odabirLokacije = document.getElementById("odabir-lokacije");
 const obrisiLokacijuBtn = document.getElementById("obrisi-lokaciju");
@@ -1336,57 +1339,20 @@ const opisLokacijePrikaz = document.getElementById("opis-lokacije-prikaz");
 const koordinatePrikaz = document.getElementById("koordinate-prikaz");
 const lokacijaPoruka = document.getElementById("lokacija-poruka");
 
-const zadaneLokacije = [
-    {
-        id: "kopilica",
-        naziv: "Kopilica",
-        opis: "Kopilica ul. 5, Split",
-        lat: 43.522799,
-        lon: 16.450543
-    },
-    {
-        id: "kastela",
-        naziv: "Kaštela",
-        opis: "Mjerenje kod kuće u Kaštelima",
-        lat: 43.550000,
-        lon: 16.350000
-    }
-];
-
-function ucitajLokacije() {
-    const spremljene = localStorage.getItem("pkz-lokacije");
-
-    if (!spremljene) {
-        localStorage.setItem("pkz-lokacije", JSON.stringify(zadaneLokacije));
-        return [...zadaneLokacije];
-    }
-
-    try {
-        const lokacije = JSON.parse(spremljene);
-        return Array.isArray(lokacije) && lokacije.length ? lokacije : [...zadaneLokacije];
-    } catch (error) {
-        return [...zadaneLokacije];
-    }
-}
-
-function spremiLokacije(lokacije) {
-    localStorage.setItem("pkz-lokacije", JSON.stringify(lokacije));
-}
-
-function ucitajAktivnuLokacijuId(lokacije) {
-    const spremljena = localStorage.getItem("pkz-aktivna-lokacija");
-    const postoji = lokacije.some((lokacija) => lokacija.id === spremljena);
-    return postoji ? spremljena : lokacije[0].id;
-}
-
-function spremiAktivnuLokacijuId(id) {
-    localStorage.setItem("pkz-aktivna-lokacija", id);
-}
-
-let pkzLokacije = ucitajLokacije();
-let aktivnaLokacijaId = ucitajAktivnuLokacijuId(pkzLokacije);
+let pkzLokacije = [];
+let aktivnaLokacijaId = "";
 let mapa;
 let markerLokacije;
+
+function prikaziPorukuLokacije(tekst) {
+    if (!lokacijaPoruka) return;
+
+    lokacijaPoruka.textContent = tekst;
+    clearTimeout(prikaziPorukuLokacije.timer);
+    prikaziPorukuLokacije.timer = setTimeout(() => {
+        lokacijaPoruka.textContent = "";
+    }, 3000);
+}
 
 function popuniOdabirLokacije() {
     if (!odabirLokacije) return;
@@ -1404,17 +1370,7 @@ function popuniOdabirLokacije() {
 }
 
 function dohvatiAktivnuLokaciju() {
-    return pkzLokacije.find((lokacija) => lokacija.id === aktivnaLokacijaId) || pkzLokacije[0];
-}
-
-function prikaziPorukuLokacije(tekst) {
-    if (!lokacijaPoruka) return;
-
-    lokacijaPoruka.textContent = tekst;
-    clearTimeout(prikaziPorukuLokacije.timer);
-    prikaziPorukuLokacije.timer = setTimeout(() => {
-        lokacijaPoruka.textContent = "";
-    }, 2500);
+    return pkzLokacije.find((lokacija) => lokacija.id === aktivnaLokacijaId) || pkzLokacije[0] || aktivnaLokacijaServer;
 }
 
 function azurirajPrikazLokacije() {
@@ -1436,8 +1392,12 @@ function azurirajPrikazLokacije() {
     }
 }
 
-if (mapaElement && typeof L !== "undefined") {
+function inicijalizirajMapuAkoTreba() {
+    if (!mapaElement || typeof L === "undefined" || mapa) return;
+
     const pocetnaLokacija = dohvatiAktivnuLokaciju();
+    if (!pocetnaLokacija) return;
+
     const pocetnaPozicija = [Number(pocetnaLokacija.lat), Number(pocetnaLokacija.lon)];
 
     mapa = L.map("mapa", {
@@ -1491,14 +1451,57 @@ if (mapaElement && typeof L !== "undefined") {
     }, { passive: false });
 }
 
-if (odabirLokacije) {
-    popuniOdabirLokacije();
-    azurirajPrikazLokacije();
+function ucitajLokacijeIzBaze() {
+    if (!odabirLokacije && !mapaElement) return;
 
+    fetch("/api/locations?ts=" + Date.now(), { cache: "no-store" })
+        .then((odgovor) => odgovor.json())
+        .then((podaci) => {
+            pkzLokacije = Array.isArray(podaci.locations) ? podaci.locations : [];
+            aktivnaLokacijaId = podaci.active_location_id || (pkzLokacije[0] ? pkzLokacije[0].id : "");
+
+            popuniOdabirLokacije();
+            inicijalizirajMapuAkoTreba();
+            azurirajPrikazLokacije();
+        })
+        .catch(() => {
+            pkzLokacije = aktivnaLokacijaServer ? [aktivnaLokacijaServer] : [];
+            aktivnaLokacijaId = aktivnaLokacijaServer ? aktivnaLokacijaServer.id : "";
+
+            popuniOdabirLokacije();
+            inicijalizirajMapuAkoTreba();
+            azurirajPrikazLokacije();
+            prikaziPorukuLokacije("Lokacije trenutno nisu dostupne.");
+        });
+}
+
+function postaviAktivnuLokaciju(locationId) {
+    return fetch("/api/locations/active", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ location_id: locationId })
+    }).then((odgovor) => {
+        if (!odgovor.ok) throw new Error("Lokacija nije spremljena.");
+        return odgovor.json();
+    });
+}
+
+if (odabirLokacije) {
     odabirLokacije.addEventListener("change", function () {
         aktivnaLokacijaId = this.value;
-        spremiAktivnuLokacijuId(aktivnaLokacijaId);
-        azurirajPrikazLokacije();
+
+        postaviAktivnuLokaciju(aktivnaLokacijaId)
+            .then((podaci) => {
+                pkzLokacije = Array.isArray(podaci.locations) ? podaci.locations : pkzLokacije;
+                popuniOdabirLokacije();
+                azurirajPrikazLokacije();
+                prikaziPorukuLokacije("Aktivna lokacija je promijenjena. Nova mjerenja spremat će se pod ovu lokaciju.");
+            })
+            .catch(() => {
+                prikaziPorukuLokacije("Lokacija nije promijenjena.");
+            });
     });
 }
 
@@ -1516,42 +1519,61 @@ if (lokacijaForma) {
             return;
         }
 
-        const novaLokacija = {
-            id: `lokacija-${Date.now()}`,
-            naziv,
-            opis,
-            lat,
-            lon
-        };
-
-        pkzLokacije.push(novaLokacija);
-        aktivnaLokacijaId = novaLokacija.id;
-        spremiLokacije(pkzLokacije);
-        spremiAktivnuLokacijuId(aktivnaLokacijaId);
-        popuniOdabirLokacije();
-        azurirajPrikazLokacije();
-        lokacijaForma.reset();
-        prikaziPorukuLokacije("Lokacija je spremljena.");
+        fetch("/api/locations", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ naziv, opis, lat, lon })
+        })
+            .then((odgovor) => {
+                if (!odgovor.ok) throw new Error("Lokacija nije spremljena.");
+                return odgovor.json();
+            })
+            .then((podaci) => {
+                pkzLokacije = Array.isArray(podaci.locations) ? podaci.locations : pkzLokacije;
+                aktivnaLokacijaId = podaci.location ? podaci.location.id : aktivnaLokacijaId;
+                popuniOdabirLokacije();
+                azurirajPrikazLokacije();
+                lokacijaForma.reset();
+                prikaziPorukuLokacije("Lokacija je spremljena i postavljena kao aktivna.");
+            })
+            .catch(() => {
+                prikaziPorukuLokacije("Lokacija nije spremljena.");
+            });
     });
 }
 
 if (obrisiLokacijuBtn) {
     obrisiLokacijuBtn.addEventListener("click", function () {
-        if (pkzLokacije.length <= 1) {
-            prikaziPorukuLokacije("Mora ostati barem jedna lokacija.");
+        if (!aktivnaLokacijaId) return;
+
+        if (!confirm("Izbrisati aktivnu lokaciju i mjerenja povezana s njom?")) {
             return;
         }
 
-        pkzLokacije = pkzLokacije.filter((lokacija) => lokacija.id !== aktivnaLokacijaId);
-        aktivnaLokacijaId = pkzLokacije[0].id;
-        spremiLokacije(pkzLokacije);
-        spremiAktivnuLokacijuId(aktivnaLokacijaId);
-        popuniOdabirLokacije();
-        azurirajPrikazLokacije();
-        prikaziPorukuLokacije("Lokacija je izbrisana.");
+        fetch(`/api/locations/${encodeURIComponent(aktivnaLokacijaId)}`, {
+            method: "DELETE"
+        })
+            .then((odgovor) => {
+                if (!odgovor.ok) throw new Error("Lokacija se ne može izbrisati.");
+                return odgovor.json();
+            })
+            .then((podaci) => {
+                pkzLokacije = Array.isArray(podaci.locations) ? podaci.locations : pkzLokacije;
+                const aktivna = pkzLokacije.find((lokacija) => lokacija.active) || pkzLokacije[0];
+                aktivnaLokacijaId = aktivna ? aktivna.id : "";
+                popuniOdabirLokacije();
+                azurirajPrikazLokacije();
+                prikaziPorukuLokacije("Lokacija je izbrisana.");
+            })
+            .catch(() => {
+                prikaziPorukuLokacije("Lokacija nije izbrisana. Mora ostati barem jedna lokacija.");
+            });
     });
 }
 
+ucitajLokacijeIzBaze();
 
 /* Jednostavna arhiva s osnovnim filterom */
 const jednostavnaArhivaBody = document.getElementById("jednostavna-arhiva-body");
@@ -1888,6 +1910,7 @@ const statusStanjeUredjaja = document.getElementById("status-stanje-uredjaja");
 const statusKomunikacija = document.getElementById("status-komunikacija");
 const statusStarostPodataka = document.getElementById("status-starost-podataka");
 const statusIzvorPodataka = document.getElementById("status-izvor-podataka");
+const statusLokacija = document.getElementById("status-lokacija");
 
 function pkzDatumZadnjegMjerenja(mjerenje) {
     if (!mjerenje) return null;
@@ -1932,7 +1955,8 @@ function pkzStatusIzMjerenja(mjerenje) {
             text: "Sustav neaktivan",
             description: "Još nije primljeno nijedno TTN mjerenje.",
             age_seconds: null,
-            last_measurement: null
+            last_measurement: null,
+            active_location: aktivnaLokacijaServer
         };
     }
 
@@ -1947,7 +1971,8 @@ function pkzStatusIzMjerenja(mjerenje) {
             text: "Sustav aktivan",
             description: "Mjerenja redovito dolaze iz TTN-a.",
             age_seconds: starostSekundi,
-            last_measurement: mjerenje
+            last_measurement: mjerenje,
+            active_location: aktivnaLokacijaServer
         };
     }
 
@@ -1957,7 +1982,8 @@ function pkzStatusIzMjerenja(mjerenje) {
             text: "Sustav neaktivan",
             description: "Nije primljeno novo mjerenje u očekivanom intervalu.",
             age_seconds: starostSekundi,
-            last_measurement: mjerenje
+            last_measurement: mjerenje,
+            active_location: aktivnaLokacijaServer
         };
     }
 
@@ -2081,6 +2107,11 @@ function pkzPrimijeniStatusSustava(info) {
         statusIzvorPodataka.textContent = zadnje ? "TTN / baza" : "Nema TTN podataka";
     }
 
+    if (statusLokacija) {
+        const lokacija = info.active_location || aktivnaLokacijaServer;
+        statusLokacija.textContent = lokacija && lokacija.naziv ? lokacija.naziv : "--";
+    }
+
     if (zadnje) {
         pkzPrikaziZadnjeMjerenjeNaKarticama(zadnje);
     }
@@ -2107,36 +2138,5 @@ pkzOsvjeziStatusSustava();
 setInterval(pkzOsvjeziStatusSustava, 30000);
 
 
-/* Automatska provjera novih mjerenja.
-   Ovo NE čeka 4 sata. Provjerava Render API svakih 30 sekundi.
-   Ako se u bazi pojavi novo mjerenje, stranica se automatski osvježi
-   kako bi tablica, graf i kartice učitali nove podatke iz data.js. */
-const pkzTrenutniKljucMjerenja = zadnjeMjerenje
-    ? String(zadnjeMjerenje.id || zadnjeMjerenje.received_at_utc || zadnjeMjerenje.datum + " " + zadnjeMjerenje.vrijeme)
-    : "";
-
-function pkzKljucMjerenja(mjerenje) {
-    if (!mjerenje) return "";
-    return String(mjerenje.id || mjerenje.received_at_utc || mjerenje.datum + " " + mjerenje.vrijeme || "");
-}
-
-function pkzProvjeriNovoMjerenje() {
-    fetch("/api/latest?ts=" + Date.now(), { cache: "no-store" })
-        .then((odgovor) => {
-            if (!odgovor.ok) throw new Error("Zadnje mjerenje nije dostupno");
-            return odgovor.json();
-        })
-        .then((mjerenje) => {
-            const noviKljuc = pkzKljucMjerenja(mjerenje);
-
-            if (noviKljuc && noviKljuc !== pkzTrenutniKljucMjerenja) {
-                window.location.reload();
-            }
-        })
-        .catch(() => {
-            // Ako API trenutno nije dostupan, ne ruši prikaz stranice.
-        });
-}
-
-pkzProvjeriNovoMjerenje();
-setInterval(pkzProvjeriNovoMjerenje, 30000);
+/* Automatska provjera novih mjerenja je isključena kako se stranica ne bi osvježavala u petlji.
+   Novi podatak se vidi nakon ručnog osvježavanja stranice, a status se i dalje osvježava preko /api/status. */

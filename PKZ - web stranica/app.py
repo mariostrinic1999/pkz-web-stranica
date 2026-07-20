@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,9 +53,51 @@ def execute(conn, sql_sqlite: str, params: tuple = (), sql_postgres: str | None 
     return cur
 
 
+def slugify(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", ascii_text.lower()).strip("-")
+    return slug or "lokacija"
+
+
+DEFAULT_LOCATIONS = [
+    {
+        "id": "kastel-gomilica",
+        "naziv": "Kaštel Gomilica",
+        "opis": "Aktivna lokacija mjerenja u Kaštel Gomilici",
+        "lat": 43.550000,
+        "lon": 16.350000,
+        "active": True,
+    },
+    {
+        "id": "kopilica",
+        "naziv": "Kopilica",
+        "opis": "Kopilica ul. 5, Split",
+        "lat": 43.522799,
+        "lon": 16.450543,
+        "active": False,
+    },
+]
+
+
 def init_db() -> None:
     with get_conn() as conn:
         if koristi_postgres():
+            execute(
+                conn,
+                "",
+                sql_postgres="""
+                CREATE TABLE IF NOT EXISTS locations (
+                    id TEXT PRIMARY KEY,
+                    naziv TEXT NOT NULL,
+                    opis TEXT,
+                    lat DOUBLE PRECISION NOT NULL,
+                    lon DOUBLE PRECISION NOT NULL,
+                    active BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at_utc TEXT NOT NULL
+                )
+                """,
+            )
             execute(
                 conn,
                 "",
@@ -74,8 +118,24 @@ def init_db() -> None:
                 )
                 """,
             )
+            execute(conn, "", sql_postgres="ALTER TABLE measurements ADD COLUMN IF NOT EXISTS location_id TEXT")
             execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
+            execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_measurements_location_received ON measurements(location_id, received_at_utc DESC)")
         else:
+            execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS locations (
+                    id TEXT PRIMARY KEY,
+                    naziv TEXT NOT NULL,
+                    opis TEXT,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 0,
+                    created_at_utc TEXT NOT NULL
+                )
+                """,
+            )
             execute(
                 conn,
                 """
@@ -95,8 +155,233 @@ def init_db() -> None:
                 )
                 """,
             )
+            cur = execute(conn, "PRAGMA table_info(measurements)")
+            columns = [row[1] for row in cur.fetchall()]
+            if "location_id" not in columns:
+                execute(conn, "ALTER TABLE measurements ADD COLUMN location_id TEXT")
             execute(conn, "CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
+            execute(conn, "CREATE INDEX IF NOT EXISTS idx_measurements_location_received ON measurements(location_id, received_at_utc DESC)")
+
+        ensure_default_locations(conn)
         conn.commit()
+
+
+def row_value(row: Any, key: str) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[key]
+
+
+def rows_to_locations(rows: list[Any]) -> list[dict[str, Any]]:
+    locations = []
+    for row in rows:
+        locations.append({
+            "id": row_value(row, "id"),
+            "naziv": row_value(row, "naziv"),
+            "opis": row_value(row, "opis") or "",
+            "lat": row_value(row, "lat"),
+            "lon": row_value(row, "lon"),
+            "active": bool(row_value(row, "active")),
+            "created_at_utc": row_value(row, "created_at_utc"),
+        })
+    return locations
+
+
+def ensure_default_locations(conn) -> None:
+    if koristi_postgres():
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT COUNT(*) AS broj FROM locations")
+        count = int(cur.fetchone()["broj"])
+        if count == 0:
+            for loc in DEFAULT_LOCATIONS:
+                cur.execute(
+                    """
+                    INSERT INTO locations (id, naziv, opis, lat, lon, active, created_at_utc)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (loc["id"], loc["naziv"], loc["opis"], loc["lat"], loc["lon"], loc["active"], datetime.now(timezone.utc).isoformat()),
+                )
+
+        cur.execute("SELECT id FROM locations WHERE active = TRUE LIMIT 1")
+        active = cur.fetchone()
+        if not active:
+            cur.execute("UPDATE locations SET active = FALSE")
+            cur.execute("UPDATE locations SET active = TRUE WHERE id = (SELECT id FROM locations ORDER BY created_at_utc ASC LIMIT 1)")
+
+        cur.execute("SELECT id FROM locations WHERE active = TRUE LIMIT 1")
+        active_id = cur.fetchone()["id"]
+        cur.execute("UPDATE measurements SET location_id = %s WHERE location_id IS NULL", (active_id,))
+    else:
+        cur = execute(conn, "SELECT COUNT(*) AS broj FROM locations")
+        count = int(cur.fetchone()["broj"])
+        if count == 0:
+            for loc in DEFAULT_LOCATIONS:
+                execute(
+                    conn,
+                    """
+                    INSERT INTO locations (id, naziv, opis, lat, lon, active, created_at_utc)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (loc["id"], loc["naziv"], loc["opis"], loc["lat"], loc["lon"], 1 if loc["active"] else 0, datetime.now(timezone.utc).isoformat()),
+                )
+
+        cur = execute(conn, "SELECT id FROM locations WHERE active = 1 LIMIT 1")
+        active = cur.fetchone()
+        if not active:
+            execute(conn, "UPDATE locations SET active = 0")
+            execute(conn, "UPDATE locations SET active = 1 WHERE id = (SELECT id FROM locations ORDER BY created_at_utc ASC LIMIT 1)")
+        active_id = row_value(execute(conn, "SELECT id FROM locations WHERE active = 1 LIMIT 1").fetchone(), "id")
+        execute(conn, "UPDATE measurements SET location_id = ? WHERE location_id IS NULL", (active_id,))
+
+
+def fetch_locations() -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT id, naziv, opis, lat, lon, active, created_at_utc FROM locations ORDER BY active DESC, naziv ASC")
+            rows = cur.fetchall()
+        else:
+            rows = execute(conn, "SELECT id, naziv, opis, lat, lon, active, created_at_utc FROM locations ORDER BY active DESC, naziv ASC").fetchall()
+    return rows_to_locations(rows)
+
+
+def get_active_location(conn=None) -> dict[str, Any] | None:
+    close_conn = False
+    if conn is None:
+        conn = get_conn()
+        close_conn = True
+
+    try:
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT id, naziv, opis, lat, lon, active, created_at_utc FROM locations WHERE active = TRUE LIMIT 1")
+            row = cur.fetchone()
+        else:
+            row = execute(conn, "SELECT id, naziv, opis, lat, lon, active, created_at_utc FROM locations WHERE active = 1 LIMIT 1").fetchone()
+
+        if not row:
+            return None
+        return rows_to_locations([row])[0]
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def set_active_location(location_id: str) -> bool:
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM locations WHERE id = %s", (location_id,))
+            if not cur.fetchone():
+                return False
+            cur.execute("UPDATE locations SET active = FALSE")
+            cur.execute("UPDATE locations SET active = TRUE WHERE id = %s", (location_id,))
+        else:
+            cur = execute(conn, "SELECT id FROM locations WHERE id = ?", (location_id,))
+            if not cur.fetchone():
+                return False
+            execute(conn, "UPDATE locations SET active = 0")
+            execute(conn, "UPDATE locations SET active = 1 WHERE id = ?", (location_id,))
+        conn.commit()
+        return True
+
+
+def unique_location_id(conn, naziv: str) -> str:
+    base = slugify(naziv)
+    candidate = base
+    i = 2
+
+    while True:
+        if koristi_postgres():
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM locations WHERE id = %s", (candidate,))
+            exists = cur.fetchone()
+        else:
+            exists = execute(conn, "SELECT id FROM locations WHERE id = ?", (candidate,)).fetchone()
+        if not exists:
+            return candidate
+        candidate = f"{base}-{i}"
+        i += 1
+
+
+def create_location(naziv: str, lat: float, lon: float, opis: str = "") -> dict[str, Any]:
+    naziv = naziv.strip()
+    opis = opis.strip()
+
+    if not naziv:
+        raise ValueError("Naziv lokacije je obavezan.")
+
+    with get_conn() as conn:
+        location_id = unique_location_id(conn, naziv)
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        if koristi_postgres():
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO locations (id, naziv, opis, lat, lon, active, created_at_utc)
+                VALUES (%s, %s, %s, %s, %s, FALSE, %s)
+                """,
+                (location_id, naziv, opis, lat, lon, created_at),
+            )
+        else:
+            execute(
+                conn,
+                """
+                INSERT INTO locations (id, naziv, opis, lat, lon, active, created_at_utc)
+                VALUES (?, ?, ?, ?, ?, 0, ?)
+                """,
+                (location_id, naziv, opis, lat, lon, created_at),
+            )
+
+        conn.commit()
+
+    set_active_location(location_id)
+
+    return {
+        "id": location_id,
+        "naziv": naziv,
+        "opis": opis,
+        "lat": lat,
+        "lon": lon,
+        "active": True,
+        "created_at_utc": created_at,
+    }
+
+
+def delete_location(location_id: str) -> bool:
+    with get_conn() as conn:
+        locations = []
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT id, active FROM locations ORDER BY created_at_utc ASC")
+            locations = cur.fetchall()
+        else:
+            locations = execute(conn, "SELECT id, active FROM locations ORDER BY created_at_utc ASC").fetchall()
+
+        if len(locations) <= 1:
+            return False
+
+        exists = any(row_value(loc, "id") == location_id for loc in locations)
+        if not exists:
+            return False
+
+        was_active = any(row_value(loc, "id") == location_id and bool(row_value(loc, "active")) for loc in locations)
+
+        if koristi_postgres():
+            cur = conn.cursor()
+            cur.execute("DELETE FROM measurements WHERE location_id = %s", (location_id,))
+            cur.execute("DELETE FROM locations WHERE id = %s", (location_id,))
+            if was_active:
+                cur.execute("UPDATE locations SET active = TRUE WHERE id = (SELECT id FROM locations ORDER BY created_at_utc ASC LIMIT 1)")
+        else:
+            execute(conn, "DELETE FROM measurements WHERE location_id = ?", (location_id,))
+            execute(conn, "DELETE FROM locations WHERE id = ?", (location_id,))
+            if was_active:
+                execute(conn, "UPDATE locations SET active = 1 WHERE id = (SELECT id FROM locations ORDER BY created_at_utc ASC LIMIT 1)")
+
+        conn.commit()
+        return True
 
 
 def to_float(value: Any) -> float | None:
@@ -170,31 +455,36 @@ def measurement_from_ttn(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def insert_measurement(measurement: dict[str, Any], raw_payload: dict[str, Any]) -> int:
-    sql_sqlite = """
-        INSERT INTO measurements
-        (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """
-    sql_postgres = """
-        INSERT INTO measurements
-        (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    """
-    values = (
-        measurement["received_at_utc"],
-        measurement["datum"],
-        measurement["vrijeme"],
-        measurement["device_id"],
-        measurement["pm25"],
-        measurement["pm10"],
-        measurement["temperatura"],
-        measurement["vlaga"],
-        measurement["co2"],
-        measurement["tlak"],
-        json.dumps(raw_payload, ensure_ascii=False),
-    )
     with get_conn() as conn:
+        active_location = get_active_location(conn)
+        location_id = active_location["id"] if active_location else None
+
+        sql_sqlite = """
+            INSERT INTO measurements
+            (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json, location_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        sql_postgres = """
+            INSERT INTO measurements
+            (received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak, raw_json, location_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        values = (
+            measurement["received_at_utc"],
+            measurement["datum"],
+            measurement["vrijeme"],
+            measurement["device_id"],
+            measurement["pm25"],
+            measurement["pm10"],
+            measurement["temperatura"],
+            measurement["vlaga"],
+            measurement["co2"],
+            measurement["tlak"],
+            json.dumps(raw_payload, ensure_ascii=False),
+            location_id,
+        )
+
         cur = execute(conn, sql_sqlite, values, sql_postgres)
         if koristi_postgres():
             measurement_id = int(cur.fetchone()[0])
@@ -202,12 +492,6 @@ def insert_measurement(measurement: dict[str, Any], raw_payload: dict[str, Any])
             measurement_id = int(cur.lastrowid)
         conn.commit()
         return measurement_id
-
-
-def row_value(row: Any, key: str) -> Any:
-    if isinstance(row, dict):
-        return row.get(key)
-    return row[key]
 
 
 def rows_to_measurements(rows: list[Any]) -> list[dict[str, Any]]:
@@ -226,37 +510,87 @@ def rows_to_measurements(rows: list[Any]) -> list[dict[str, Any]]:
                 "vlaga": row_value(row, "vlaga"),
                 "co2": row_value(row, "co2"),
                 "tlak": row_value(row, "tlak"),
+                "location_id": row_value(row, "location_id"),
+                "location_name": row_value(row, "location_name"),
             }
         )
     return measurements
 
 
-def fetch_measurements(limit: int = 1000) -> list[dict[str, Any]]:
-    sql_sqlite = """
-        SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-        FROM measurements
-        ORDER BY received_at_utc DESC
-        LIMIT ?
-    """
-    sql_postgres = """
-        SELECT id, received_at_utc, datum, vrijeme, device_id, pm25, pm10, temperatura, vlaga, co2, tlak
-        FROM measurements
-        ORDER BY received_at_utc DESC
-        LIMIT %s
-    """
+def fetch_measurements(limit: int = 1000, location_id: str | None = None) -> list[dict[str, Any]]:
     with get_conn() as conn:
+        if location_id is None:
+            active_location = get_active_location(conn)
+            location_id = active_location["id"] if active_location else None
+
+        all_locations = location_id == "all"
+
         if koristi_postgres():
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute(sql_postgres, (limit,))
+            if all_locations or not location_id:
+                cur.execute(
+                    """
+                    SELECT m.id, m.received_at_utc, m.datum, m.vrijeme, m.device_id,
+                           m.pm25, m.pm10, m.temperatura, m.vlaga, m.co2, m.tlak,
+                           m.location_id, l.naziv AS location_name
+                    FROM measurements m
+                    LEFT JOIN locations l ON l.id = m.location_id
+                    ORDER BY m.received_at_utc DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT m.id, m.received_at_utc, m.datum, m.vrijeme, m.device_id,
+                           m.pm25, m.pm10, m.temperatura, m.vlaga, m.co2, m.tlak,
+                           m.location_id, l.naziv AS location_name
+                    FROM measurements m
+                    LEFT JOIN locations l ON l.id = m.location_id
+                    WHERE m.location_id = %s
+                    ORDER BY m.received_at_utc DESC
+                    LIMIT %s
+                    """,
+                    (location_id, limit),
+                )
             rows = cur.fetchall()
         else:
-            cur = execute(conn, sql_sqlite, (limit,))
-            rows = cur.fetchall()
+            if all_locations or not location_id:
+                rows = execute(
+                    conn,
+                    """
+                    SELECT m.id, m.received_at_utc, m.datum, m.vrijeme, m.device_id,
+                           m.pm25, m.pm10, m.temperatura, m.vlaga, m.co2, m.tlak,
+                           m.location_id, l.naziv AS location_name
+                    FROM measurements m
+                    LEFT JOIN locations l ON l.id = m.location_id
+                    ORDER BY m.received_at_utc DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = execute(
+                    conn,
+                    """
+                    SELECT m.id, m.received_at_utc, m.datum, m.vrijeme, m.device_id,
+                           m.pm25, m.pm10, m.temperatura, m.vlaga, m.co2, m.tlak,
+                           m.location_id, l.naziv AS location_name
+                    FROM measurements m
+                    LEFT JOIN locations l ON l.id = m.location_id
+                    WHERE m.location_id = ?
+                    ORDER BY m.received_at_utc DESC
+                    LIMIT ?
+                    """,
+                    (location_id, limit),
+                ).fetchall()
+
     return rows_to_measurements(rows)
 
 
-def fetch_latest() -> dict[str, Any] | None:
-    rows = fetch_measurements(1)
+def fetch_latest(location_id: str | None = None) -> dict[str, Any] | None:
+    rows = fetch_measurements(1, location_id)
     return rows[0] if rows else None
 
 
@@ -278,34 +612,95 @@ def ttn_webhook():
     return jsonify({"ok": True, "id": measurement_id, "measurement": measurement}), 200
 
 
+@app.route("/api/locations", methods=["GET"])
+def api_locations():
+    locations = fetch_locations()
+    active_location = next((loc for loc in locations if loc["active"]), locations[0] if locations else None)
+    return jsonify({
+        "ok": True,
+        "locations": locations,
+        "active_location_id": active_location["id"] if active_location else None,
+        "active_location": active_location
+    })
+
+
+@app.route("/api/locations", methods=["POST"])
+def api_create_location():
+    data = request.get_json(silent=True) or {}
+
+    try:
+        naziv = str(data.get("naziv") or "").strip()
+        opis = str(data.get("opis") or "").strip()
+        lat = float(data.get("lat"))
+        lon = float(data.get("lon"))
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError("Koordinate nisu ispravne.")
+
+        location = create_location(naziv, lat, lon, opis)
+        return jsonify({"ok": True, "location": location, "locations": fetch_locations()}), 201
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.route("/api/locations/active", methods=["POST"])
+def api_set_active_location():
+    data = request.get_json(silent=True) or {}
+    location_id = str(data.get("location_id") or data.get("id") or "").strip()
+
+    if not location_id:
+        return jsonify({"ok": False, "error": "Nedostaje ID lokacije."}), 400
+
+    if not set_active_location(location_id):
+        return jsonify({"ok": False, "error": "Lokacija nije pronađena."}), 404
+
+    return jsonify({"ok": True, "active_location_id": location_id, "locations": fetch_locations()})
+
+
+@app.route("/api/locations/<location_id>", methods=["DELETE"])
+def api_delete_location(location_id: str):
+    if not delete_location(location_id):
+        return jsonify({"ok": False, "error": "Lokacija se ne može izbrisati."}), 400
+
+    return jsonify({"ok": True, "locations": fetch_locations()})
+
+
 @app.route("/api/measurements", methods=["GET"])
 def api_measurements():
     limit = request.args.get("limit", "1000")
+    location_id = request.args.get("location_id")
+
     try:
         limit_int = min(max(int(limit), 1), 5000)
     except ValueError:
         limit_int = 1000
 
-    return jsonify(fetch_measurements(limit_int))
+    return jsonify(fetch_measurements(limit_int, location_id))
 
 
 @app.route("/api/latest", methods=["GET"])
 def api_latest():
-    return jsonify(fetch_latest() or {})
+    location_id = request.args.get("location_id")
+    return jsonify(fetch_latest(location_id) or {})
 
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
-    latest = fetch_latest()
+    active_location = None
+    with get_conn() as conn:
+        active_location = get_active_location(conn)
+
+    latest = fetch_latest(active_location["id"] if active_location else None)
+
     if not latest:
         return jsonify({
             "ok": True,
             "has_data": False,
             "status": "offline",
             "text": "Sustav neaktivan",
-            "description": "Još nije primljeno nijedno TTN mjerenje.",
+            "description": "Još nije primljeno nijedno TTN mjerenje za aktivnu lokaciju.",
             "age_seconds": None,
-            "last_measurement": None
+            "last_measurement": None,
+            "active_location": active_location,
         })
 
     try:
@@ -331,19 +726,33 @@ def api_status():
         "text": text,
         "description": description,
         "age_seconds": age_seconds,
-        "last_measurement": latest
+        "last_measurement": latest,
+        "active_location": active_location,
     })
 
 
 @app.route("/data.js", methods=["GET"])
 def data_js():
-    content = "window.PKZ_MJERENJA = " + json.dumps(fetch_measurements(5000), ensure_ascii=False) + ";\n"
+    with get_conn() as conn:
+        active_location = get_active_location(conn)
+
+    content = (
+        "window.PKZ_AKTIVNA_LOKACIJA = " + json.dumps(active_location, ensure_ascii=False) + ";\n" +
+        "window.PKZ_MJERENJA = " + json.dumps(fetch_measurements(5000, active_location["id"] if active_location else None), ensure_ascii=False) + ";\n"
+    )
     return Response(content, mimetype="application/javascript")
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "database": "postgres" if koristi_postgres() else str(DB_PATH)})
+    with get_conn() as conn:
+        active_location = get_active_location(conn)
+
+    return jsonify({
+        "ok": True,
+        "database": "postgres" if koristi_postgres() else str(DB_PATH),
+        "active_location": active_location
+    })
 
 
 @app.route("/", methods=["GET"])
