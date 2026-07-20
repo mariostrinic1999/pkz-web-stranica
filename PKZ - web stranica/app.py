@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -631,9 +632,26 @@ def fetch_latest(location_id: str | None = None) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+def valid_ttn_token() -> bool:
+    if not OPTIONAL_TOKEN:
+        return True
+
+    sent_token = request.args.get("key", "").strip()
+
+    if not sent_token:
+        sent_token = request.headers.get("X-PKZ-Token", "").strip()
+
+    if not sent_token:
+        auth_header = request.headers.get("Authorization", "").strip()
+        if auth_header.lower().startswith("bearer "):
+            sent_token = auth_header[7:].strip()
+
+    return bool(sent_token) and hmac.compare_digest(sent_token, OPTIONAL_TOKEN)
+
+
 @app.route("/ttn", methods=["POST"])
 def ttn_webhook():
-    if OPTIONAL_TOKEN and request.headers.get("X-PKZ-Token") != OPTIONAL_TOKEN:
+    if not valid_ttn_token():
         return jsonify({"ok": False, "error": "Neispravan token."}), 401
 
     payload = request.get_json(silent=True)
@@ -788,6 +806,7 @@ def health():
     return jsonify({
         "ok": True,
         "database": "postgres" if koristi_postgres() else str(DB_PATH),
+        "ttn_protection": "enabled" if OPTIONAL_TOKEN else "disabled",
         "active_location": active_location
     })
 
