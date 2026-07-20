@@ -1583,3 +1583,38 @@ tbody tr:hover {
     color: #334155;
     border: 1px solid #cbd5e1;
 }
+
+/* Aktivna lokacija u navigaciji */
+.glavna-navigacija {
+    align-items: center;
+}
+
+.nav-lokacija-info {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: white;
+    font-size: 13px;
+}
+
+.nav-lokacija-info span {
+    color: #e0f2fe;
+}
+
+.nav-lokacija-info strong {
+    color: white;
+    font-weight: 700;
+}
+
+@media (max-width: 900px) {
+    .nav-lokacija-info {
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+}

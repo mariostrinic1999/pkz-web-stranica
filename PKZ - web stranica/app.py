@@ -64,9 +64,9 @@ DEFAULT_LOCATIONS = [
     {
         "id": "kastel-gomilica",
         "naziv": "Kaštel Gomilica",
-        "opis": "Aktivna lokacija mjerenja u Kaštel Gomilici",
-        "lat": 43.550000,
-        "lon": 16.350000,
+        "opis": "Dvorište",
+        "lat": 43.55303881627435,
+        "lon": 16.39665384424447,
         "active": True,
     },
     {
@@ -202,6 +202,24 @@ def ensure_default_locations(conn) -> None:
                     (loc["id"], loc["naziv"], loc["opis"], loc["lat"], loc["lon"], loc["active"], datetime.now(timezone.utc).isoformat()),
                 )
 
+        cur.execute(
+            """
+            UPDATE locations
+            SET opis = %s, lat = %s, lon = %s
+            WHERE id = %s
+              AND (opis = %s OR ABS(lat - %s) < 0.000001 OR ABS(lon - %s) < 0.000001)
+            """,
+            (
+                "Dvorište",
+                43.55303881627435,
+                16.39665384424447,
+                "kastel-gomilica",
+                "Aktivna lokacija mjerenja u Kaštel Gomilici",
+                43.55,
+                16.35,
+            ),
+        )
+
         cur.execute("SELECT id FROM locations WHERE active = TRUE LIMIT 1")
         active = cur.fetchone()
         if not active:
@@ -224,6 +242,25 @@ def ensure_default_locations(conn) -> None:
                     """,
                     (loc["id"], loc["naziv"], loc["opis"], loc["lat"], loc["lon"], 1 if loc["active"] else 0, datetime.now(timezone.utc).isoformat()),
                 )
+
+        execute(
+            conn,
+            """
+            UPDATE locations
+            SET opis = ?, lat = ?, lon = ?
+            WHERE id = ?
+              AND (opis = ? OR ABS(lat - ?) < 0.000001 OR ABS(lon - ?) < 0.000001)
+            """,
+            (
+                "Dvorište",
+                43.55303881627435,
+                16.39665384424447,
+                "kastel-gomilica",
+                "Aktivna lokacija mjerenja u Kaštel Gomilici",
+                43.55,
+                16.35,
+            ),
+        )
 
         cur = execute(conn, "SELECT id FROM locations WHERE active = 1 LIMIT 1")
         active = cur.fetchone()

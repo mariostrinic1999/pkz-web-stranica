@@ -251,6 +251,23 @@ function ucitajMjerenjaSaServera() {
 
 const stvarnaMjerenja = ucitajMjerenjaSaServera();
 const aktivnaLokacijaServer = window.PKZ_AKTIVNA_LOKACIJA || null;
+const navLokacijaNaziv = document.getElementById("nav-lokacija-naziv");
+const footerLokacijaNaziv = document.getElementById("footer-lokacija-naziv");
+
+function formatirajKoordinatu(vrijednost) {
+    const broj = Number(vrijednost);
+    if (Number.isNaN(broj)) return "--";
+    return broj.toFixed(14).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function pkzAzurirajPrikazAktivneLokacije(lokacija) {
+    const naziv = lokacija && lokacija.naziv ? lokacija.naziv : "--";
+
+    if (navLokacijaNaziv) navLokacijaNaziv.textContent = naziv;
+    if (footerLokacijaNaziv) footerLokacijaNaziv.textContent = naziv;
+}
+
+pkzAzurirajPrikazAktivneLokacije(aktivnaLokacijaServer);
 
 // Online verzija: prikazuju se samo stvarna mjerenja iz baze.
 // Ako je baza prazna, ne generiraju se probni/demo podaci.
@@ -1377,10 +1394,12 @@ function azurirajPrikazLokacije() {
     const lokacija = dohvatiAktivnuLokaciju();
     if (!lokacija) return;
 
+    pkzAzurirajPrikazAktivneLokacije(lokacija);
+
     if (nazivLokacijePrikaz) nazivLokacijePrikaz.textContent = lokacija.naziv;
     if (opisLokacijePrikaz) opisLokacijePrikaz.textContent = lokacija.opis || "Bez opisa";
     if (koordinatePrikaz) {
-        koordinatePrikaz.textContent = `${Number(lokacija.lat).toFixed(6)}, ${Number(lokacija.lon).toFixed(6)}`;
+        koordinatePrikaz.textContent = `${formatirajKoordinatu(lokacija.lat)}, ${formatirajKoordinatu(lokacija.lon)}`;
     }
 
     if (mapa && markerLokacije) {
@@ -2107,8 +2126,10 @@ function pkzPrimijeniStatusSustava(info) {
         statusIzvorPodataka.textContent = zadnje ? "TTN / baza" : "Nema TTN podataka";
     }
 
+    const lokacija = info.active_location || aktivnaLokacijaServer;
+    pkzAzurirajPrikazAktivneLokacije(lokacija);
+
     if (statusLokacija) {
-        const lokacija = info.active_location || aktivnaLokacijaServer;
         statusLokacija.textContent = lokacija && lokacija.naziv ? lokacija.naziv : "--";
     }
 
