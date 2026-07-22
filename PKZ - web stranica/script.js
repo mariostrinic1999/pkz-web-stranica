@@ -1237,17 +1237,19 @@ function formatirajDatumZaGraf(vrijeme) {
     return `${vrijednosti.day}.${vrijednosti.month}.`;
 }
 
-function formatirajOznakuZaGraf(mjerenje, indeks, lista) {
-    const vrijeme = mjerenje.vrijemeMjerenja;
-    const sat = formatirajSatZaGraf(vrijeme);
-    const datum = formatirajDatumZaGraf(vrijeme);
+function formatirajOznakuZaGraf(mjerenje) {
+    return formatirajSatZaGraf(mjerenje.vrijemeMjerenja);
+}
+
+function formatirajOznakuDatumaZaGraf(mjerenje, indeks, lista) {
+    const datum = formatirajDatumZaGraf(mjerenje.vrijemeMjerenja);
     const prethodniDatum = indeks > 0 ? formatirajDatumZaGraf(lista[indeks - 1].vrijemeMjerenja) : null;
 
     if (indeks === 0 || datum !== prethodniDatum) {
-        return [sat, datum];
+        return datum;
     }
 
-    return sat;
+    return "";
 }
 
 function generirajPodatkeZaZadnjih48Sati() {
@@ -1327,7 +1329,8 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
     odabirPodatka.value = "temperatura";
     const podaci48h = generirajPodatkeZaZadnjih48Sati();
     const podaci48hZaGraf = [...podaci48h].reverse();
-    const oznakeVremena = podaci48hZaGraf.map((m, indeks, lista) => formatirajOznakuZaGraf(m, indeks, lista));
+    const oznakeVremena = podaci48hZaGraf.map((m) => formatirajOznakuZaGraf(m));
+    const oznakeDatuma = podaci48hZaGraf.map((m, indeks, lista) => formatirajOznakuDatumaZaGraf(m, indeks, lista));
 
     const podaci48Sati = {
         temperatura: {
@@ -1398,6 +1401,34 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
                     }
                 },
                 x: {
+                    title: {
+                        display: false
+                    }
+                },
+                xDatum: {
+                    type: "category",
+                    position: "bottom",
+                    labels: oznakeDatuma,
+                    offset: false,
+                    grid: {
+                        display: false,
+                        drawTicks: false
+                    },
+                    border: {
+                        display: false
+                    },
+                    ticks: {
+                        autoSkip: false,
+                        padding: 0,
+                        maxRotation: 0,
+                        minRotation: 0,
+                        font: {
+                            weight: "bold"
+                        },
+                        callback: function (vrijednost, indeks) {
+                            return oznakeDatuma[indeks] || "";
+                        }
+                    },
                     title: {
                         display: true,
                         text: "Zadnjih 48 sati"
