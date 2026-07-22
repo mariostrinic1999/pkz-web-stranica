@@ -1199,10 +1199,7 @@ function dohvatiVrijemeMjerenja(mjerenje) {
     return null;
 }
 
-function formatirajOznakuMjerenja(mjerenje) {
-    const vrijeme = dohvatiVrijemeMjerenja(mjerenje);
-    if (!vrijeme) return mjerenje.vrijeme || "--";
-
+function dohvatiDijeloveDatuma(vrijeme) {
     const dijelovi = new Intl.DateTimeFormat("hr-HR", {
         timeZone: VREMENSKA_ZONA,
         day: "2-digit",
@@ -1217,7 +1214,40 @@ function formatirajOznakuMjerenja(mjerenje) {
         if (dio.type !== "literal") vrijednosti[dio.type] = dio.value;
     });
 
+    return vrijednosti;
+}
+
+function formatirajOznakuMjerenja(mjerenje) {
+    const vrijeme = dohvatiVrijemeMjerenja(mjerenje);
+    if (!vrijeme) return mjerenje.vrijeme || "--";
+
+    const vrijednosti = dohvatiDijeloveDatuma(vrijeme);
     return `${vrijednosti.day}.${vrijednosti.month}. ${vrijednosti.hour}:${vrijednosti.minute}`;
+}
+
+function formatirajSatZaGraf(vrijeme) {
+    if (!vrijeme) return "--";
+    const vrijednosti = dohvatiDijeloveDatuma(vrijeme);
+    return `${vrijednosti.hour}:${vrijednosti.minute}`;
+}
+
+function formatirajDatumZaGraf(vrijeme) {
+    if (!vrijeme) return "";
+    const vrijednosti = dohvatiDijeloveDatuma(vrijeme);
+    return `${vrijednosti.day}.${vrijednosti.month}.`;
+}
+
+function formatirajOznakuZaGraf(mjerenje, indeks, lista) {
+    const vrijeme = mjerenje.vrijemeMjerenja;
+    const sat = formatirajSatZaGraf(vrijeme);
+    const datum = formatirajDatumZaGraf(vrijeme);
+    const prethodniDatum = indeks > 0 ? formatirajDatumZaGraf(lista[indeks - 1].vrijemeMjerenja) : null;
+
+    if (indeks === 0 || datum !== prethodniDatum) {
+        return [sat, datum];
+    }
+
+    return sat;
 }
 
 function generirajPodatkeZaZadnjih48Sati() {
@@ -1241,6 +1271,7 @@ function generirajPodatkeZaZadnjih48Sati() {
         .sort((a, b) => b.vrijemeMjerenja - a.vrijemeMjerenja)
         .map((mjerenje) => ({
             sat: formatirajOznakuMjerenja(mjerenje),
+            vrijemeMjerenja: mjerenje.vrijemeMjerenja,
             pm25: mjerenje.pm25,
             pm10: mjerenje.pm10,
             temperatura: mjerenje.temperatura,
@@ -1296,7 +1327,7 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
     odabirPodatka.value = "temperatura";
     const podaci48h = generirajPodatkeZaZadnjih48Sati();
     const podaci48hZaGraf = [...podaci48h].reverse();
-    const oznakeVremena = podaci48hZaGraf.map(m => m.sat);
+    const oznakeVremena = podaci48hZaGraf.map((m, indeks, lista) => formatirajOznakuZaGraf(m, indeks, lista));
 
     const podaci48Sati = {
         temperatura: {
@@ -1348,7 +1379,15 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: "top" }
+                legend: { position: "top" },
+                tooltip: {
+                    callbacks: {
+                        title: function (items) {
+                            const indeks = items && items.length ? items[0].dataIndex : 0;
+                            return podaci48hZaGraf[indeks] ? podaci48hZaGraf[indeks].sat : "";
+                        }
+                    }
+                }
             },
             scales: {
                 y: {
