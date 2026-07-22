@@ -1182,64 +1182,98 @@ if (preuzmiExcelGumb) {
     });
 }
 
-/* Zadnja 24 sata - oznake */
-function generirajOznakeZaZadnja24Sata() {
-    const trenutnoZagreb = dohvatiDijeloveDatumaZaZagreb();
-    const trenutniSat = Number(trenutnoZagreb.sat);
-    const oznake = [];
-
-    for (let i = 0; i < 24; i++) {
-        const sat = (trenutniSat - i + 24) % 24;
-        oznake.push(String(sat).padStart(2, "0"));
+/* Zadnjih 48 sati - stvarna mjerenja */
+function dohvatiVrijemeMjerenja(mjerenje) {
+    if (mjerenje.received_at_utc) {
+        const vrijemeIzBaze = new Date(mjerenje.received_at_utc);
+        if (!Number.isNaN(vrijemeIzBaze.getTime())) {
+            return vrijemeIzBaze;
+        }
     }
 
-    return oznake;
-}
-
-/* Zadnja 24 sata - probni podaci */
-function generirajPodatkeZaZadnja24Sata() {
-    if (Array.isArray(povijestMjerenja) && povijestMjerenja.length > 0) {
-        return [...povijestMjerenja]
-            .sort(usporediMjerenjaOdNajnovijeg)
-            .slice(0, 24)
-            .map((mjerenje) => ({
-                sat: mjerenje.vrijeme.slice(0, 5),
-                pm25: mjerenje.pm25,
-                pm10: mjerenje.pm10,
-                temperatura: mjerenje.temperatura,
-                vlaga: mjerenje.vlaga,
-                co2: mjerenje.co2,
-                tlak: mjerenje.tlak
-            }));
+    const lokalnoVrijeme = new Date(`${mjerenje.datum}T${mjerenje.vrijeme}:00`);
+    if (!Number.isNaN(lokalnoVrijeme.getTime())) {
+        return lokalnoVrijeme;
     }
 
-    return [];
+    return null;
 }
 
-/* Tablica zadnja 24 sata na početnoj */
+function formatirajOznakuMjerenja(mjerenje) {
+    const vrijeme = dohvatiVrijemeMjerenja(mjerenje);
+    if (!vrijeme) return mjerenje.vrijeme || "--";
+
+    const dijelovi = new Intl.DateTimeFormat("hr-HR", {
+        timeZone: VREMENSKA_ZONA,
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+    }).formatToParts(vrijeme);
+
+    const vrijednosti = {};
+    dijelovi.forEach((dio) => {
+        if (dio.type !== "literal") vrijednosti[dio.type] = dio.value;
+    });
+
+    return `${vrijednosti.day}.${vrijednosti.month}. ${vrijednosti.hour}:${vrijednosti.minute}`;
+}
+
+function generirajPodatkeZaZadnjih48Sati() {
+    if (!Array.isArray(povijestMjerenja) || povijestMjerenja.length === 0) {
+        return [];
+    }
+
+    const sada = new Date();
+    const pocetak = new Date(sada.getTime() - 48 * 60 * 60 * 1000);
+
+    return [...povijestMjerenja]
+        .map((mjerenje) => ({
+            ...mjerenje,
+            vrijemeMjerenja: dohvatiVrijemeMjerenja(mjerenje)
+        }))
+        .filter((mjerenje) => {
+            return mjerenje.vrijemeMjerenja &&
+                mjerenje.vrijemeMjerenja >= pocetak &&
+                mjerenje.vrijemeMjerenja <= sada;
+        })
+        .sort((a, b) => b.vrijemeMjerenja - a.vrijemeMjerenja)
+        .map((mjerenje) => ({
+            sat: formatirajOznakuMjerenja(mjerenje),
+            pm25: mjerenje.pm25,
+            pm10: mjerenje.pm10,
+            temperatura: mjerenje.temperatura,
+            vlaga: mjerenje.vlaga,
+            co2: mjerenje.co2,
+            tlak: mjerenje.tlak
+        }));
+}
+
+/* Tablica zadnjih 48 sati na početnoj */
 const tablicaZadnja24hBody = document.getElementById("tablica-zadnja-24h-body");
 
 function popuniTablicuZadnja24h() {
     if (!tablicaZadnja24hBody) return;
 
-    const podaci24h = generirajPodatkeZaZadnja24Sata();
+    const podaci48h = generirajPodatkeZaZadnjih48Sati();
     tablicaZadnja24hBody.innerHTML = "";
 
-    if (!podaci24h.length) {
+    if (!podaci48h.length) {
         const red = document.createElement("tr");
-        red.innerHTML = `<td colspan="7">Nema mjerenja u bazi.</td>`;
+        red.innerHTML = `<td colspan="7">Nema mjerenja u zadnjih 48 sati.</td>`;
         tablicaZadnja24hBody.appendChild(red);
         return;
     }
 
-    podaci24h.forEach((mjerenje) => {
+    podaci48h.forEach((mjerenje) => {
         const red = document.createElement("tr");
 
         const klasaPM25 = odrediKlasuPM25(mjerenje.pm25);
         const klasaPM10 = odrediKlasuPM10(mjerenje.pm10);
 
         red.innerHTML = `
-            <td>${mjerenje.sat}:00</td>
+            <td>${mjerenje.sat}</td>
             <td>${mjerenje.temperatura}</td>
             <td>${mjerenje.vlaga}</td>
             <td>${mjerenje.tlak}</td>
@@ -1254,40 +1288,40 @@ function popuniTablicuZadnja24h() {
 
 popuniTablicuZadnja24h();
 
-/* Graf na početnoj - zadnja 24 sata */
+/* Graf na početnoj - zadnjih 48 sati */
 const odabirPodatka = document.getElementById("odabir-podatka");
 const chartCanvas = document.getElementById("airChart");
 
 if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
     odabirPodatka.value = "temperatura";
-    const podaci24h = generirajPodatkeZaZadnja24Sata();
-    const podaci24hZaGraf = [...podaci24h].reverse();
-    const oznakeVremena = podaci24hZaGraf.map(m => m.sat);
+    const podaci48h = generirajPodatkeZaZadnjih48Sati();
+    const podaci48hZaGraf = [...podaci48h].reverse();
+    const oznakeVremena = podaci48hZaGraf.map(m => m.sat);
 
-    const podaci24Sata = {
+    const podaci48Sati = {
         temperatura: {
             label: "Temperatura",
-            vrijednosti: podaci24hZaGraf.map(m => m.temperatura)
+            vrijednosti: podaci48hZaGraf.map(m => m.temperatura)
         },
         vlaga: {
             label: "Vlaga",
-            vrijednosti: podaci24hZaGraf.map(m => m.vlaga)
+            vrijednosti: podaci48hZaGraf.map(m => m.vlaga)
         },
         tlak: {
             label: "Tlak",
-            vrijednosti: podaci24hZaGraf.map(m => m.tlak)
+            vrijednosti: podaci48hZaGraf.map(m => m.tlak)
         },
         pm25: {
             label: "PM2.5",
-            vrijednosti: podaci24hZaGraf.map(m => m.pm25)
+            vrijednosti: podaci48hZaGraf.map(m => m.pm25)
         },
         pm10: {
             label: "PM10",
-            vrijednosti: podaci24hZaGraf.map(m => m.pm10)
+            vrijednosti: podaci48hZaGraf.map(m => m.pm10)
         },
         co2: {
             label: "CO₂",
-            vrijednosti: podaci24hZaGraf.map(m => m.co2)
+            vrijednosti: podaci48hZaGraf.map(m => m.co2)
         }
     };
 
@@ -1299,8 +1333,8 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
             labels: oznakeVremena,
             datasets: [
                 {
-                    label: podaci24Sata.temperatura.label,
-                    data: podaci24Sata.temperatura.vrijednosti,
+                    label: podaci48Sati.temperatura.label,
+                    data: podaci48Sati.temperatura.vrijednosti,
                     borderColor: "#2563eb",
                     backgroundColor: "rgba(37, 99, 235, 0.12)",
                     tension: 0.35,
@@ -1327,7 +1361,7 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
                 x: {
                     title: {
                         display: true,
-                        text: "Zadnja 24 sata"
+                        text: "Zadnjih 48 sati"
                     }
                 }
             }
@@ -1335,7 +1369,7 @@ if (chartCanvas && odabirPodatka && typeof Chart !== "undefined") {
     });
 
     odabirPodatka.addEventListener("change", function () {
-        const odabrano = podaci24Sata[this.value];
+        const odabrano = podaci48Sati[this.value];
         airChart.data.datasets[0].label = odabrano.label;
         airChart.data.datasets[0].data = odabrano.vrijednosti;
         airChart.update();
