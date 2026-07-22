@@ -1380,8 +1380,15 @@ tbody tr:hover {
     font-size: 12px;
 }
 
+.pocetna-page .chart-panel {
+    display: flex;
+    flex-direction: column;
+}
+
 .pocetna-page .chart-wrapper {
-    height: 245px;
+    flex: 1;
+    min-height: 385px;
+    height: auto;
 }
 
 .pocetna-page .status-list {
@@ -1435,7 +1442,8 @@ tbody tr:hover {
     }
 
     .pocetna-page .chart-wrapper {
-        height: 220px;
+        min-height: 260px;
+        height: 260px;
     }
 }
 
