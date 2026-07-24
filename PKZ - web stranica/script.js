@@ -1258,17 +1258,36 @@ function generirajPodatkeZaZadnjih48Sati() {
     }
 
     const sada = new Date();
-    const pocetak = new Date(sada.getTime() - 48 * 60 * 60 * 1000);
 
-    return [...povijestMjerenja]
+    const mjerenjaSVremenom = [...povijestMjerenja]
         .map((mjerenje) => ({
             ...mjerenje,
             vrijemeMjerenja: dohvatiVrijemeMjerenja(mjerenje)
         }))
         .filter((mjerenje) => {
             return mjerenje.vrijemeMjerenja &&
-                mjerenje.vrijemeMjerenja >= pocetak &&
                 mjerenje.vrijemeMjerenja <= sada;
+        });
+
+    if (mjerenjaSVremenom.length === 0) {
+        return [];
+    }
+
+    // Razdoblje od 48 sati računa se od zadnjeg stvarnog mjerenja,
+    // a ne od trenutačnog vremena. Tako npr. 24.07. u 12:00
+    // prikazuje i mjerenje 22.07. u 12:00.
+    const zadnjeVrijemeMjerenja = new Date(
+        Math.max(...mjerenjaSVremenom.map((mjerenje) => mjerenje.vrijemeMjerenja.getTime()))
+    );
+
+    const pocetak = new Date(
+        zadnjeVrijemeMjerenja.getTime() - 48 * 60 * 60 * 1000
+    );
+
+    return mjerenjaSVremenom
+        .filter((mjerenje) => {
+            return mjerenje.vrijemeMjerenja >= pocetak &&
+                mjerenje.vrijemeMjerenja <= zadnjeVrijemeMjerenja;
         })
         .sort((a, b) => b.vrijemeMjerenja - a.vrijemeMjerenja)
         .map((mjerenje) => ({
