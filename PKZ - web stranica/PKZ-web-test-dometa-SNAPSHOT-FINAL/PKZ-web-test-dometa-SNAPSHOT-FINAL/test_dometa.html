@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test dometa - Praćenje kvalitete zraka</title>
+    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="icon" href="favicon.png?v=3" type="image/png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="test-dometa-page">
+
+    <header class="topbar">
+        <div class="topbar-main">
+            <div class="topbar-left">
+                <div class="naslov-box">
+                    <img src="logo.svg" alt="Logo sustava" class="logo">
+                    <div class="naslov-tekst">
+                        <h1>Test dometa LoRaWAN veze</h1>
+                        <p>Praćenje prijema paketa, jačine signala i udaljenosti od gatewaya</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <div class="status-online status-ceka" id="range-live-status">Čeka testni paket</div>
+
+                <div class="vrijeme-box">
+                    <span>Datum i vrijeme</span>
+                    <strong id="trenutno-vrijeme">--</strong>
+                </div>
+            </div>
+        </div>
+
+        <nav class="glavna-navigacija">
+            <a href="index.html" class="nav-link">Početna</a>
+            <a href="o_sustavu.html" class="nav-link">O sustavu</a>
+            <a href="lokacija.html" class="nav-link">Lokacija</a>
+            <a href="arhiva.html" class="nav-link">Arhiva</a>
+            <a href="statistika.html" class="nav-link">Statistika</a>
+
+            <div class="nav-lokacija-info">
+                <span>GPS:</span>
+                <strong id="nav-gps-status">Čeka lokaciju</strong>
+            </div>
+        </nav>
+    </header>
+
+    <main class="dashboard range-dashboard">
+        <section class="range-intro panel">
+            <div>
+                <h2>Test u vožnji</h2>
+                <p>
+                    Senzorski čvor šalje testni LoRaWAN paket približno svake 2 minute na FPort 2.
+                    Mobitel koristi svoju GPS lokaciju za izračun udaljenosti od gatewaya.
+                </p>
+            </div>
+            <div class="range-actions">
+                <button type="button" id="pokreni-gps" class="primary-button">Pokreni GPS</button>
+                <button type="button" id="zaustavi-gps" class="secondary-button" disabled>Zaustavi GPS</button>
+            </div>
+        </section>
+
+        <section class="range-cards">
+            <div class="card">
+                <span class="card-title">Udaljenost od gatewaya</span>
+                <p id="range-distance" class="card-value">--</p>
+                <span class="card-desc">Izračun iz GPS lokacije mobitela</span>
+            </div>
+
+            <div class="card">
+                <span class="card-title">RSSI</span>
+                <p id="range-rssi" class="card-value">--</p>
+                <span class="card-desc">Jačina primljenog LoRa signala</span>
+            </div>
+
+            <div class="card">
+                <span class="card-title">SNR</span>
+                <p id="range-snr" class="card-value">--</p>
+                <span class="card-desc">Omjer signal / šum</span>
+            </div>
+
+            <div class="card">
+                <span class="card-title">Spreading factor</span>
+                <p id="range-sf" class="card-value">--</p>
+                <span class="card-desc">SF korišten za zadnji paket</span>
+            </div>
+
+            <div class="card">
+                <span class="card-title">Zadnji testni paket</span>
+                <p id="range-last-packet" class="card-value range-small-value">--</p>
+                <span id="range-age" class="card-desc">Još nema podataka</span>
+            </div>
+
+            <div class="card">
+                <span class="card-title">Gateway</span>
+                <p id="range-gateway" class="card-value range-small-value">--</p>
+                <span class="card-desc">Gateway koji je najbolje primio paket</span>
+            </div>
+        </section>
+
+        <section class="range-grid">
+            <div class="panel">
+                <h2>Lokacija gatewaya</h2>
+                <p class="range-muted">
+                    Ove koordinate spremaju se samo u preglednik na mobitelu. Unesi ih jednom prije vožnje.
+                </p>
+
+                <div class="gateway-form-grid">
+                    <label class="range-field">
+                        <span>Latitude</span>
+                        <input type="number" step="any" id="gateway-lat" placeholder="npr. 43.5530">
+                    </label>
+
+                    <label class="range-field">
+                        <span>Longitude</span>
+                        <input type="number" step="any" id="gateway-lon" placeholder="npr. 16.3966">
+                    </label>
+                </div>
+
+                <div class="range-actions range-actions-left">
+                    <button type="button" id="spremi-gateway" class="primary-button">Spremi koordinate</button>
+                    <button type="button" id="gateway-trenutna-lokacija" class="secondary-button">Koristi trenutnu GPS lokaciju</button>
+                </div>
+
+                <p id="gateway-poruka" class="range-message" aria-live="polite"></p>
+            </div>
+
+            <div class="panel">
+                <h2>GPS mobitela</h2>
+                <div class="status-list">
+                    <div class="status-item">
+                        <span>Latitude</span>
+                        <strong id="mobile-lat">--</strong>
+                    </div>
+                    <div class="status-item">
+                        <span>Longitude</span>
+                        <strong id="mobile-lon">--</strong>
+                    </div>
+                    <div class="status-item">
+                        <span>Procijenjena GPS točnost</span>
+                        <strong id="mobile-accuracy">--</strong>
+                    </div>
+                    <div class="status-item">
+                        <span>Frame counter</span>
+                        <strong id="range-fcnt">--</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel range-history-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Primljeni paketi tijekom testa</h2>
+                    <p>Udaljenost se sprema uz paket kada je GPS mobitela dostupan.</p>
+                </div>
+                <span id="range-history-count" class="range-count">0 paketa</span>
+            </div>
+
+            <div class="range-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Vrijeme</th>
+                            <th>Udaljenost</th>
+                            <th>RSSI</th>
+                            <th>SNR</th>
+                            <th>SF</th>
+                            <th>Fcnt</th>
+                            <th>Gateway</th>
+                        </tr>
+                    </thead>
+                    <tbody id="range-table-body">
+                        <tr>
+                            <td colspan="7">Još nema testnih paketa.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-box">
+                <h3>Test dometa</h3>
+                <p>Praćenje LoRaWAN veze tijekom kretanja senzorskog čvora.</p>
+                <p>Testni uplink: FPort 2</p>
+                <p>Interval: približno 2 minute</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Diplomski rad</h3>
+                <p>Mario Strinić</p>
+                <p>LoRaWAN sustav za praćenje kvalitete zraka</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Ustanova</h3>
+                <p>UNIST</p>
+                <p>Sveučilišni odjel za stručne studije</p>
+                <p>2026</p>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>© 2026 Sustav za praćenje kvalitete zraka. Sva prava pridržana.</p>
+            <p class="footer-test-line"><a href="test_dometa.html" class="footer-test-link">Test dometa</a></p>
+        </div>
+    </footer>
+
+    <script src="test_dometa.js?v=6"></script>
+</body>
+</html>

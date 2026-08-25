@@ -1,0 +1,70 @@
+KAKO POKRENUTI STRANICU S PRAVIM TTN PODACIMA
+
+1) Pokretanje lokalno
+
+Otvori terminal u ovom folderu:
+PKZ - web stranica
+
+Zatim pokreni:
+
+pip install -r requirements.txt
+python app.py
+
+Stranicu otvori na:
+http://127.0.0.1:5000
+
+Nemoj otvarati index.html dvoklikom ako želiš stvarne podatke iz baze.
+Mora ići preko Flask servera, jer on daje /data.js i API podatke.
+
+
+2) TTN payload formatter
+
+U The Things Stack aplikaciji idi na:
+Payload formatters -> Uplink -> Custom Javascript formatter
+
+Zalijepi sadržaj datoteke:
+ttn_payload_formatter.js
+
+Formatter mora vratiti decoded_payload s poljima:
+pm25, pm10, co2, temperatura, vlaga, tlak
+
+
+3) TTN webhook
+
+U The Things Stack aplikaciji idi na:
+Integrations -> Webhooks -> Add webhook -> Custom webhook
+
+Postavi:
+Webhook format: JSON
+Base URL: adresa tvog servera
+Uplink message path: /ttn
+
+Ako radiš lokalno, TTN ne može direktno doći do 127.0.0.1.
+Treba ti javna adresa, npr. ngrok ili kasnije Render.
+
+Primjer za lokalno testiranje preko ngroka:
+ngrok http 5000
+
+Tada u TTN kao Base URL staviš ngrok adresu, npr.:
+https://neki-naziv.ngrok-free.app
+
+A uplink path ostaje:
+/ttn
+
+
+4) Provjera
+
+Kad uređaj pošalje uplink:
+- Flask u terminalu mora prikazati POST /ttn 200
+- u folderu se napravi baza mjerenja.db
+- stranica automatski prikazuje stvarne vrijednosti iz baze
+
+Možeš provjeriti i direktno:
+http://127.0.0.1:5000/api/measurements
+http://127.0.0.1:5000/api/latest
+
+
+5) Važno
+
+Ako u TTN-u nema decoded_payload, backend neće znati pročitati bajtove.
+Zato prvo moraš imati ispravan payload formatter.
