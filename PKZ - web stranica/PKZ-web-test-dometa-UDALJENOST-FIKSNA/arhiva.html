@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arhiva podataka</title>
+    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="icon" href="favicon.png?v=3" type="image/png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="arhiva-page">
+
+    <header class="topbar">
+        <div class="topbar-main">
+            <div class="topbar-left">
+                <div class="naslov-box">
+                    <img src="logo.svg" alt="Logo sustava" class="logo">
+                    <div class="naslov-tekst">
+                        <h1>Sustav za praćenje kvalitete zraka</h1>
+                        <p>Arhiva mjerenja</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <div class="status-online">Sustav aktivan</div>
+
+                <div class="vrijeme-box">
+                    <span>Datum i vrijeme</span>
+                    <strong id="trenutno-vrijeme">--</strong>
+                </div>
+            </div>
+        </div>
+
+        <nav class="glavna-navigacija">
+            <a href="index.html" class="nav-link">Početna</a>
+            <a href="o_sustavu.html" class="nav-link">O sustavu</a>
+            <a href="lokacija.html" class="nav-link">Lokacija</a>
+            <a href="arhiva.html" class="nav-link aktivan">Arhiva</a>
+            <a href="statistika.html" class="nav-link">Statistika</a>
+
+            <div class="nav-lokacija-info">
+                <span>Lokacija mjerenja:</span>
+                <strong id="nav-lokacija-naziv">--</strong>
+            </div>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <section class="panel">
+            <h2>Arhiva mjerenja</h2>
+            <p>
+                Arhiva prikazuje spremljena mjerenja kvalitete zraka u obliku jednostavne tablice.
+                U tablici se nalaze vrijeme mjerenja i očitane vrijednosti senzora.
+            </p>
+
+            <div class="podpanel">
+                <div class="podpanel-zaglavlje">
+                    <h3>Pregled spremljenih mjerenja</h3>
+                    <p id="jednostavna-arhiva-opis">Odaberi razdoblje za prikaz podataka u arhivi.</p>
+                </div>
+
+                <div class="jednostavni-filter">
+                    <button type="button" class="aktivan" data-jednostavni-filter="24h">Zadnja 24 sata</button>
+                    <button type="button" data-jednostavni-filter="7d">Zadnjih 7 dana</button>
+                    <button type="button" data-jednostavni-filter="30d">Zadnjih 30 dana</button>
+                    <button type="button" data-jednostavni-filter="all">Sva mjerenja</button>
+                </div>
+
+                <div class="mjesec-filter">
+                    <label for="jednostavna-arhiva-mjesec">Odaberi mjesec:</label>
+                    <select id="jednostavna-arhiva-mjesec">
+                        <option value="">Bez odabira mjeseca</option>
+                    </select>
+                </div>
+
+                <div class="tablica-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Datum</th>
+                                <th>Vrijeme</th>
+                                <th>Temperatura</th>
+                                <th>Vlaga</th>
+                                <th>Tlak</th>
+                                <th>PM2.5</th>
+                                <th>PM10</th>
+                                <th>CO₂</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jednostavna-arhiva-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-box">
+                <h3>Sustav za praćenje kvalitete zraka</h3>
+                <p>Web sučelje za prikaz mjerenja, analizu podataka i pregled arhive.</p>
+                <p>Lokacija mjerenja: <span id="footer-lokacija-naziv">--</span></p>
+                <p>Komunikacija: LoRaWAN</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Diplomski rad</h3>
+                <p>Mario Strinić</p>
+                <p>LoRaWAN sustav za praćenje kvalitete zraka</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Ustanova</h3>
+                <p>UNIST</p>
+                <p>Sveučilišni odjel za stručne studije</p>
+                <p>2026</p>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>© 2026 Sustav za praćenje kvalitete zraka. Sva prava pridržana.</p>
+            <p class="footer-test-line"><a href="test_dometa.html" class="footer-test-link">Test dometa</a></p>
+        </div>
+    </footer>
+
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
