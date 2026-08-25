@@ -126,25 +126,24 @@ function spremiGatewayPoziciju(lat, lon) {
     gatewayLonInput.value = String(longitude);
     gatewayPorukaEl.textContent = "Koordinate gatewaya su spremljene.";
 
-    azurirajTrenutnuUdaljenost();
+    // Udaljenost se NE računa ovdje. Veže se isključivo uz novi LoRaWAN paket.
     return true;
 }
 
 function azurirajTrenutnuUdaljenost() {
+    // Trenutna GPS lokacija se i dalje prati, ali se NE prikazuje kao
+    // udaljenost zadnjeg LoRaWAN paketa. Udaljenost na kartici smije se
+    // promijeniti samo kada stigne novi testni paket.
     if (!gatewayPozicija || !trenutnaPozicija) {
-        distanceEl.textContent = "--";
         return null;
     }
 
-    const udaljenost = izracunajUdaljenostMetara(
+    return izracunajUdaljenostMetara(
         gatewayPozicija.lat,
         gatewayPozicija.lon,
         trenutnaPozicija.lat,
         trenutnaPozicija.lon
     );
-
-    distanceEl.textContent = formatirajUdaljenost(udaljenost);
-    return udaljenost;
 }
 
 function pokreniGPS() {
@@ -180,7 +179,7 @@ function pokreniGPS() {
             pokreniGpsBtn.disabled = true;
             zaustaviGpsBtn.disabled = false;
 
-            azurirajTrenutnuUdaljenost();
+            // GPS samo osvježava poziciju mobitela. Udaljenost se zaključava tek kad stigne novi paket.
             obradiNoviPacketAkoTreba();
         },
         (error) => {
@@ -276,48 +275,61 @@ function postaviStatusPaketa(packet) {
     fcntEl.textContent = zadnjiPacket.f_cnt ?? "--";
 
     if (zadnjiPacket.distance_m !== null && zadnjiPacket.distance_m !== undefined) {
+        // Jednom spremljena udaljenost pripada tom paketu i ostaje fiksna.
         distanceEl.textContent = formatirajUdaljenost(zadnjiPacket.distance_m);
     } else {
-        azurirajTrenutnuUdaljenost();
+        // Dok udaljenost za novi paket još nije povezana s GPS uzorkom,
+        // nemoj prikazivati trenutačnu udaljenost vozila.
+        distanceEl.textContent = "--";
     }
 }
 
 async function spremiPozicijuUzPacket(packet, udaljenost, pozicija) {
-    if (!packet || !packet.id || !pozicija || !Number.isFinite(udaljenost)) return;
-
-    try {
-        const response = await fetch(`/api/range-test/${packet.id}/position`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                lat: pozicija.lat,
-                lon: pozicija.lon,
-                distance_m: udaljenost,
-                accuracy_m: pozicija.accuracy
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error("Pozicija nije spremljena.");
-        }
-
-        packet.mobile_lat = pozicija.lat;
-        packet.mobile_lon = pozicija.lon;
-        packet.distance_m = udaljenost;
-        packet.gps_accuracy_m = pozicija.accuracy;
-    } catch (error) {
-        console.error(error);
+    if (!packet || !packet.id || !pozicija || !Number.isFinite(udaljenost)) {
+        return null;
     }
+
+    const response = await fetch(`/api/range-test/${packet.id}/position`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+            lat: pozicija.lat,
+            lon: pozicija.lon,
+            distance_m: udaljenost,
+            accuracy_m: pozicija.accuracy
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error("Pozicija nije spremljena.");
+    }
+
+    const rezultat = await response.json();
+
+    // Server/baza je jedini autoritet. Ako je neki drugi tab ili uređaj
+    // već spremio udaljenost, koristimo baš tu postojeću vrijednost.
+    if (rezultat && rezultat.packet) {
+        Object.assign(packet, rezultat.packet);
+        return rezultat.packet;
+    }
+
+    return null;
 }
 
 function pronadiGpsPozicijuZaPacket(packet) {
-    if (!packet || !packet.received_at_utc) return trenutnaPozicija;
+    // Za paket se koristi samo GPS uzorak koji je vremenski blizu trenutku
+    // kada je TTN primio taj paket. Ne koristi se kasnija trenutačna lokacija,
+    // jer bi se tada udaljenost starog paketa mijenjala tijekom vožnje.
+    if (!packet || !packet.received_at_utc || gpsPovijest.length === 0) {
+        return null;
+    }
 
     const packetVrijeme = new Date(packet.received_at_utc).getTime();
-    if (!Number.isFinite(packetVrijeme) || gpsPovijest.length === 0) {
-        return trenutnaPozicija;
+    if (!Number.isFinite(packetVrijeme)) {
+        return null;
     }
 
     let najbolja = gpsPovijest[0];
@@ -331,9 +343,11 @@ function pronadiGpsPozicijuZaPacket(packet) {
         }
     }
 
-    // Ako nema GPS uzorka blizu vremena paketa, koristi trenutačnu poziciju.
-    if (najmanjaRazlika > 30000 && trenutnaPozicija) {
-        return trenutnaPozicija;
+    // GPS uzorak mora biti unutar 30 sekundi od vremena primitka paketa.
+    // Ako ga nema, udaljenost za taj paket ostaje prazna umjesto da se
+    // pogrešno veže uz neku kasniju lokaciju vozila.
+    if (najmanjaRazlika > 30000) {
+        return null;
     }
 
     return najbolja;
@@ -342,6 +356,15 @@ function pronadiGpsPozicijuZaPacket(packet) {
 async function obradiNoviPacketAkoTreba() {
     if (!zadnjiPacket || !zadnjiPacket.id) return;
     if (zadnjiObradeniPacketId === zadnjiPacket.id) return;
+
+    // Ako je udaljenost već spremljena u bazi, taj paket je završen.
+    // Nikad je ponovno ne računaj niti prepisuj novom GPS lokacijom.
+    if (zadnjiPacket.distance_m !== null && zadnjiPacket.distance_m !== undefined) {
+        zadnjiObradeniPacketId = zadnjiPacket.id;
+        distanceEl.textContent = formatirajUdaljenost(zadnjiPacket.distance_m);
+        return;
+    }
+
     if (!trenutnaPozicija || !gatewayPozicija) return;
 
     const pozicijaZaPacket = pronadiGpsPozicijuZaPacket(zadnjiPacket);
@@ -354,11 +377,31 @@ async function obradiNoviPacketAkoTreba() {
         pozicijaZaPacket.lon
     );
 
+    // Zaključaj obradu ovog paketa prije mrežnog zahtjeva da dva GPS callbacka
+    // ne pokušaju istodobno spremiti različite udaljenosti.
     zadnjiObradeniPacketId = zadnjiPacket.id;
-    distanceEl.textContent = formatirajUdaljenost(udaljenost);
 
-    await spremiPozicijuUzPacket(zadnjiPacket, udaljenost, pozicijaZaPacket);
-    await ucitajPovijestTesta();
+    try {
+        const spremljeniPacket = await spremiPozicijuUzPacket(
+            zadnjiPacket,
+            udaljenost,
+            pozicijaZaPacket
+        );
+
+        // Ne prikazuj privremeno izračunatu vrijednost. Prikaži samo onu
+        // koju je baza stvarno zaključala uz taj paket.
+        if (spremljeniPacket &&
+            spremljeniPacket.distance_m !== null &&
+            spremljeniPacket.distance_m !== undefined) {
+            distanceEl.textContent = formatirajUdaljenost(spremljeniPacket.distance_m);
+        }
+
+        await ucitajPovijestTesta();
+    } catch (error) {
+        console.error(error);
+        // Ako spremanje nije uspjelo, dopusti ponovni pokušaj za isti paket.
+        zadnjiObradeniPacketId = null;
+    }
 }
 
 async function ucitajZadnjiPacket() {

@@ -839,15 +839,57 @@ def fetch_latest_range_test_packet() -> dict[str, Any] | None:
     return packets[0] if packets else None
 
 
+def fetch_range_test_packet_by_id(packet_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                """
+                SELECT id, received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id,
+                       rssi, snr, spreading_factor, bandwidth, frequency,
+                       mobile_lat, mobile_lon, distance_m, gps_accuracy_m
+                FROM range_test_packets
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (packet_id,),
+            )
+            row = cur.fetchone()
+        else:
+            row = execute(
+                conn,
+                """
+                SELECT id, received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id,
+                       rssi, snr, spreading_factor, bandwidth, frequency,
+                       mobile_lat, mobile_lon, distance_m, gps_accuracy_m
+                FROM range_test_packets
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (packet_id,),
+            ).fetchone()
+
+    return row_to_range_test_packet(row) if row else None
+
+
 def update_range_test_position(packet_id: int, lat: float, lon: float, distance_m: float, accuracy_m: float | None) -> bool:
+    """
+    Udaljenost se smije zapisati samo jednom.
+    WHERE distance_m IS NULL radi zaključavanje na razini baze pa ni drugi tab,
+    drugi uređaj ili kasniji GPS update ne može promijeniti već spremljenu udaljenost.
+    """
     with get_conn() as conn:
         if koristi_postgres():
             cur = conn.cursor()
             cur.execute(
                 """
                 UPDATE range_test_packets
-                SET mobile_lat = %s, mobile_lon = %s, distance_m = %s, gps_accuracy_m = %s
+                SET mobile_lat = %s,
+                    mobile_lon = %s,
+                    distance_m = %s,
+                    gps_accuracy_m = %s
                 WHERE id = %s
+                  AND distance_m IS NULL
                 """,
                 (lat, lon, distance_m, accuracy_m, packet_id),
             )
@@ -856,8 +898,12 @@ def update_range_test_position(packet_id: int, lat: float, lon: float, distance_
                 conn,
                 """
                 UPDATE range_test_packets
-                SET mobile_lat = ?, mobile_lon = ?, distance_m = ?, gps_accuracy_m = ?
+                SET mobile_lat = ?,
+                    mobile_lon = ?,
+                    distance_m = ?,
+                    gps_accuracy_m = ?
                 WHERE id = ?
+                  AND distance_m IS NULL
                 """,
                 (lat, lon, distance_m, accuracy_m, packet_id),
             )
@@ -1021,10 +1067,20 @@ def api_range_test_position(packet_id: int):
     except (TypeError, ValueError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
-    if not update_range_test_position(packet_id, lat, lon, distance_m, accuracy_m):
+    # Pokušaj spremanja. Ako je udaljenost već spremljena, UPDATE namjerno
+    # neće ništa promijeniti. U oba slučaja vraćamo stvarno stanje iz baze.
+    spremljeno_sada = update_range_test_position(packet_id, lat, lon, distance_m, accuracy_m)
+    packet = fetch_range_test_packet_by_id(packet_id)
+
+    if not packet:
         return jsonify({"ok": False, "error": "Testni paket nije pronađen."}), 404
 
-    return jsonify({"ok": True, "id": packet_id})
+    return jsonify({
+        "ok": True,
+        "id": packet_id,
+        "saved_now": spremljeno_sada,
+        "packet": packet
+    })
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
