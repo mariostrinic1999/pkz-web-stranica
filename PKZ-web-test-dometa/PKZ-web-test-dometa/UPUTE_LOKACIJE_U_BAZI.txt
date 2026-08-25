@@ -1,0 +1,15 @@
+Ova verzija povezuje mjerenja s aktivnom lokacijom.
+
+Kako radi:
+1. Lokacije se spremaju u bazu podataka, ne više samo u localStorage preglednika.
+2. U bazi postoji tablica locations.
+3. Tablica measurements ima polje location_id.
+4. Kada TTN pošalje novo mjerenje, backend ga sprema pod trenutno aktivnu lokaciju.
+5. Početna stranica, API, status, grafovi i tablice prikazuju mjerenja aktivne lokacije.
+6. Kada dodaš novu lokaciju, ona postaje aktivna i u početku nema mjerenja.
+7. Kada se vratiš na staru lokaciju, prikazuju se njezina ranija mjerenja.
+
+Važno:
+- Ne uploadati .venv ni mjerenja.db.
+- Render mora imati DATABASE_URL postavljen na Neon/PostgreSQL.
+- TTN webhook mora slati na https://pkz-web-stranica.onrender.com/ttn.
