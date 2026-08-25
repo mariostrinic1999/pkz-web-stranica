@@ -1,18 +1,170 @@
-<svg width="170" height="115" viewBox="0 0 170 115" fill="none" xmlns="http://www.w3.org/2000/svg">
-<line x1="85.3168" y1="3.42599" x2="85.3168" y2="25.695" stroke="#1E3A5F"/>
-<path d="M113.081 7.70848V29.9774" stroke="#1E3A5F"/>
-<line x1="54.4828" y1="6.85199" x2="54.4828" y2="29.121" stroke="#1E3A5F"/>
-<line x1="141.846" y1="23.982" x2="141.846" y2="47.9639" stroke="#1E3A5F"/>
-<line x1="25.3619" y1="29.121" x2="25.3619" y2="49.6769" stroke="#1E3A5F"/>
-<circle cx="84.8168" cy="71.9459" r="3.42599" fill="white"/>
-<path d="M84.8164 0C128.05 4.08981e-05 163.802 33.4563 169.634 76.9326H167.615C161.8 34.5052 126.88 2.00004 84.8164 2C42.7533 2.00024 7.83329 34.5053 2.01855 76.9326H0C5.83155 33.4564 41.583 0.000236191 84.8164 0Z" fill="#1E3A5F"/>
-<path d="M84.9701 22.269C119.939 22.2692 150.78 43.8236 169.061 76.6362H166.765C148.698 44.865 118.714 24.2692 84.9701 24.269C51.2263 24.2691 21.2415 44.8648 3.17419 76.6362H0.878288C19.1588 43.8234 50.0008 22.2691 84.9701 22.269Z" fill="#1E3A5F"/>
-<path d="M84.8168 71.9459L77.9648 49.6769" stroke="white" stroke-linecap="round"/>
-<path d="M24.8619 46.9212C23.1489 46.9212 10.3014 59.9549 4.3059 71.9459C8.35255 52.9975 13.7274 43.6814 24.8619 30.834L24.8619 46.9212Z" fill="#3FA34D" stroke="black" stroke-width="0.1"/>
-<path d="M53.9828 28.3644C42.677 33.1891 36.6634 36.8044 26.5749 45.0348V28.7449C34.5555 20.0821 40.3268 16.4542 53.9828 9.42149V28.3644Z" fill="#6CC551" stroke="black" stroke-width="0.1"/>
-<path d="M84.8168 22.269C73.29 22.6202 66.9137 23.7543 55.6958 27.4079V8.56497C66.6397 5.18294 72.1742 3.54335 84.8168 3.42598V22.269Z" fill="#B7D84B" stroke="black" stroke-width="0.1"/>
-<path d="M86.5298 3.42599V22.269C96.5232 22.7658 102.144 23.6028 112.225 26.7101V8.56499C110.082 6.22681 95.7518 3.83037 86.5298 3.42599Z" fill="#F2C94C" stroke="black" stroke-width="0.1"/>
-<path d="M113.938 8.56499V27.408C125.522 31.5004 133.637 36.8294 141.346 43.6814V26.5515C131.411 17.6475 125.343 13.8729 113.938 8.56499Z" fill="#F2994A" stroke="black" stroke-width="0.1"/>
-<path d="M143.059 29.121V44.5379C152.859 53.4106 157.433 59.3548 165.328 70.2329C158.946 48.1491 150.34 32.9614 143.059 29.121Z" fill="#D64545" stroke="black" stroke-width="0.1"/>
-<path d="M49.007 102.58V80.1796H58.223C60.207 80.1796 61.903 80.4996 63.311 81.1396C64.7404 81.7796 65.839 82.697 66.607 83.8916C67.375 85.0863 67.759 86.505 67.759 88.1476C67.759 89.7903 67.375 91.209 66.607 92.4036C65.839 93.5983 64.7404 94.5156 63.311 95.1556C61.903 95.7956 60.207 96.1156 58.223 96.1156H51.311L53.167 94.1636V102.58H49.007ZM53.167 94.6116L51.311 92.5956H58.031C59.8657 92.5956 61.2417 92.2116 62.159 91.4436C63.0977 90.6543 63.567 89.5556 63.567 88.1476C63.567 86.7183 63.0977 85.6196 62.159 84.8516C61.2417 84.0836 59.8657 83.6996 58.031 83.6996H51.311L53.167 81.6516V94.6116ZM82.0253 97.2996L81.8013 92.3716L93.5453 80.1796H98.2173L88.4573 90.5476L86.1533 93.0756L82.0253 97.2996ZM78.3133 102.58V80.1796H82.4733V102.58H78.3133ZM93.9293 102.58L85.3533 92.3716L88.1053 89.3316L98.7933 102.58H93.9293ZM106.33 102.58V99.7956L120.794 82.1316L121.274 83.6996H106.554V80.1796H125.018V82.9636L110.554 100.628L110.042 99.0596H125.434V102.58H106.33Z" fill="white"/>
-</svg>
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lokacija mjerne stanice</title>
+    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="icon" href="favicon.png?v=3" type="image/png">
+    <link rel="stylesheet" href="style.css">
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+</head>
+<body class="lokacija-page">
+
+    <header class="topbar">
+        <div class="topbar-main">
+            <div class="topbar-left">
+                <div class="naslov-box">
+                    <img src="logo.svg" alt="Logo sustava" class="logo">
+                    <div class="naslov-tekst">
+                        <h1>Sustav za praćenje kvalitete zraka</h1>
+                        <p>Lokacija mjerne stanice</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <div class="status-online">Sustav aktivan</div>
+
+                <div class="vrijeme-box">
+                    <span>Datum i vrijeme</span>
+                    <strong id="trenutno-vrijeme">--</strong>
+                </div>
+            </div>
+        </div>
+
+        <nav class="glavna-navigacija">
+            <a href="index.html" class="nav-link">Početna</a>
+            <a href="o_sustavu.html" class="nav-link">O sustavu</a>
+            <a href="lokacija.html" class="nav-link aktivan">Lokacija</a>
+            <a href="arhiva.html" class="nav-link">Arhiva</a>
+            <a href="statistika.html" class="nav-link">Statistika</a>
+
+            <div class="nav-lokacija-info">
+                <span>Lokacija mjerenja:</span>
+                <strong id="nav-lokacija-naziv">--</strong>
+            </div>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <section class="lokacija-layout">
+            <div class="panel lokacija-panel">
+                <h2>Lokacija senzorskog čvora</h2>
+                <p>
+                    Odaberi spremljenu lokaciju senzorskog čvora ili dodaj novu lokaciju
+                    unosom naziva i koordinata. Odabrana lokacija prikazuje se na karti.
+                </p>
+
+                <div class="lokacija-controls">
+                    <div class="lokacija-polje">
+                        <label for="odabir-lokacije">Odabrana lokacija</label>
+                        <select id="odabir-lokacije"></select>
+                    </div>
+
+                    <button type="button" id="obrisi-lokaciju" class="lokacija-btn sekundarni">Izbriši</button>
+                </div>
+
+                <div class="lokacija-info kompaktna-lokacija-info">
+                    <div class="lokacija-red">
+                        <span>Naziv</span>
+                        <strong id="naziv-lokacije-prikaz">--</strong>
+                    </div>
+
+                    <div class="lokacija-red">
+                        <span>Opis</span>
+                        <strong id="opis-lokacije-prikaz">--</strong>
+                    </div>
+
+                    <div class="lokacija-red">
+                        <span>Koordinate</span>
+                        <strong id="koordinate-prikaz">--</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel lokacija-panel">
+                <h2>Dodaj novu lokaciju</h2>
+                <p>
+                    Za novu mjernu lokaciju upiši naziv, koordinate i kratak opis.
+                    Lokacija se sprema u bazu podataka.
+                </p>
+
+                <form id="lokacija-forma" class="lokacija-forma">
+                    <div class="lokacija-polje">
+                        <label for="lokacija-naziv">Naziv lokacije</label>
+                        <input id="lokacija-naziv" type="text" placeholder="npr. Kaštela - kuća" required>
+                    </div>
+
+                    <div class="lokacija-forma-red">
+                        <div class="lokacija-polje">
+                            <label for="lokacija-lat">Latitude</label>
+                            <input id="lokacija-lat" type="number" step="any" placeholder="43.55" required>
+                        </div>
+
+                        <div class="lokacija-polje">
+                            <label for="lokacija-lon">Longitude</label>
+                            <input id="lokacija-lon" type="number" step="any" placeholder="16.35" required>
+                        </div>
+                    </div>
+
+                    <div class="lokacija-polje">
+                        <label for="lokacija-opis">Opis</label>
+                        <input id="lokacija-opis" type="text" placeholder="npr. mjerenje u dvorištu / na krovu">
+                    </div>
+
+                    <button type="submit" class="lokacija-btn">Spremi lokaciju</button>
+                    <p id="lokacija-poruka" class="lokacija-poruka"></p>
+                </form>
+            </div>
+        </section>
+
+        <section class="panel lokacija-karta-panel">
+            <div class="lokacija-karta-zaglavlje">
+                <div>
+                    <h2>Karta lokacije</h2>
+                    <p>Oznaka na karti prikazuje trenutno odabranu lokaciju senzorskog čvora.</p>
+                </div>
+            </div>
+            <div id="mapa"></div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-box">
+                <h3>Sustav za praćenje kvalitete zraka</h3>
+                <p>Web sučelje za prikaz mjerenja, analizu podataka i pregled arhive.</p>
+                <p>Lokacija mjerenja: <span id="footer-lokacija-naziv">--</span></p>
+                <p>Komunikacija: LoRaWAN</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Diplomski rad</h3>
+                <p>Mario Strinić</p>
+                <p>LoRaWAN sustav za praćenje kvalitete zraka</p>
+            </div>
+
+            <div class="footer-box">
+                <h3>Ustanova</h3>
+                <p>UNIST</p>
+                <p>Sveučilišni odjel za stručne studije</p>
+                <p>2026</p>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>© 2026 Sustav za praćenje kvalitete zraka. Sva prava pridržana.</p>
+            <p class="footer-test-line"><a href="test_dometa.html" class="footer-test-link">Test dometa</a></p>
+        </div>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

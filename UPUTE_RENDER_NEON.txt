@@ -1,5 +1,13 @@
-mjerenja.db
-*.db
-.env
-__pycache__/
-*.pyc
+ONLINE POSTAVLJANJE - RENDER + NEON
+
+1. U GitHub uploadati/overwriteati ove datoteke.
+2. Na Renderu napraviti Web Service iz GitHub repozitorija.
+3. Root Directory: PKZ - web stranica
+4. Build Command: pip install -r requirements.txt
+5. Start Command: gunicorn app:app
+6. Environment variable:
+   DATABASE_URL = Neon connection string
+7. Nakon deploya otvoriti:
+   https://tvoja-render-adresa.onrender.com/health
+8. U TTN webhooku promijeniti Base URL na Render adresu.
+   Uplink path ostaje /ttn
