@@ -1626,3 +1626,220 @@ tbody tr:hover {
         justify-content: flex-start;
     }
 }
+
+/* =====================================================
+   TEST DOMETA
+   ===================================================== */
+
+.range-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.range-intro {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.range-intro p,
+.range-muted {
+    margin: 6px 0 0;
+    color: #64748b;
+    line-height: 1.55;
+}
+
+.range-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.range-actions-left {
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.primary-button,
+.secondary-button {
+    border: 0;
+    border-radius: 10px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.primary-button {
+    background: #0f4c81;
+    color: white;
+}
+
+.primary-button:hover {
+    background: #0b3c68;
+}
+
+.secondary-button {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+
+.secondary-button:hover {
+    background: #cbd5e1;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.range-cards {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.range-small-value {
+    font-size: 18px;
+    overflow-wrap: anywhere;
+}
+
+.range-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.gateway-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.range-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.range-field span {
+    font-size: 13px;
+    font-weight: 700;
+    color: #475569;
+}
+
+.range-field input {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    color: #0f172a;
+    font-size: 16px;
+}
+
+.range-field input:focus {
+    outline: 2px solid rgba(29, 112, 184, 0.22);
+    border-color: #1d70b8;
+}
+
+.range-message {
+    min-height: 20px;
+    margin: 12px 0 0;
+    color: #475569;
+    font-size: 13px;
+}
+
+.range-history-panel {
+    overflow: hidden;
+}
+
+.range-table-wrap {
+    overflow-x: auto;
+}
+
+.range-table-wrap table {
+    min-width: 820px;
+}
+
+.range-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #0f4c81;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+@media (max-width: 1200px) {
+    .range-cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .range-intro {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .range-actions {
+        justify-content: flex-start;
+    }
+
+    .range-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .range-grid,
+    .gateway-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .range-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* Link na Test dometa nalazi se samo u podnožju stranice. */
+.footer-test-link {
+    display: inline-block;
+    margin-top: 8px;
+    color: #ffffff;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.footer-test-link:hover {
+    color: #dbeafe;
+}
+
+
+/* Test dometa - poveznica je namjerno samo u PODNOŽJU stranice. */
+.footer-test-line {
+    margin-top: 10px !important;
+}
+
+.footer-bottom .footer-test-link {
+    display: inline-block;
+    color: #ffffff;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.footer-bottom .footer-test-link:hover {
+    color: #dbeafe;
+}

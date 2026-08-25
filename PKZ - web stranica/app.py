@@ -122,6 +122,32 @@ def init_db() -> None:
             execute(conn, "", sql_postgres="ALTER TABLE measurements ADD COLUMN IF NOT EXISTS location_id TEXT")
             execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
             execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_measurements_location_received ON measurements(location_id, received_at_utc DESC)")
+            execute(
+                conn,
+                "",
+                sql_postgres="""
+                CREATE TABLE IF NOT EXISTS range_test_packets (
+                    id SERIAL PRIMARY KEY,
+                    received_at_utc TEXT NOT NULL,
+                    datum TEXT NOT NULL,
+                    vrijeme TEXT NOT NULL,
+                    device_id TEXT,
+                    f_cnt BIGINT,
+                    gateway_id TEXT,
+                    rssi DOUBLE PRECISION,
+                    snr DOUBLE PRECISION,
+                    spreading_factor INTEGER,
+                    bandwidth BIGINT,
+                    frequency BIGINT,
+                    mobile_lat DOUBLE PRECISION,
+                    mobile_lon DOUBLE PRECISION,
+                    distance_m DOUBLE PRECISION,
+                    gps_accuracy_m DOUBLE PRECISION,
+                    raw_json TEXT NOT NULL
+                )
+                """,
+            )
+            execute(conn, "", sql_postgres="CREATE INDEX IF NOT EXISTS idx_range_test_received ON range_test_packets(received_at_utc DESC)")
         else:
             execute(
                 conn,
@@ -162,6 +188,31 @@ def init_db() -> None:
                 execute(conn, "ALTER TABLE measurements ADD COLUMN location_id TEXT")
             execute(conn, "CREATE INDEX IF NOT EXISTS idx_measurements_received ON measurements(received_at_utc DESC)")
             execute(conn, "CREATE INDEX IF NOT EXISTS idx_measurements_location_received ON measurements(location_id, received_at_utc DESC)")
+            execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS range_test_packets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    received_at_utc TEXT NOT NULL,
+                    datum TEXT NOT NULL,
+                    vrijeme TEXT NOT NULL,
+                    device_id TEXT,
+                    f_cnt INTEGER,
+                    gateway_id TEXT,
+                    rssi REAL,
+                    snr REAL,
+                    spreading_factor INTEGER,
+                    bandwidth INTEGER,
+                    frequency INTEGER,
+                    mobile_lat REAL,
+                    mobile_lon REAL,
+                    distance_m REAL,
+                    gps_accuracy_m REAL,
+                    raw_json TEXT NOT NULL
+                )
+                """,
+            )
+            execute(conn, "CREATE INDEX IF NOT EXISTS idx_range_test_received ON range_test_packets(received_at_utc DESC)")
 
         ensure_default_locations(conn)
         conn.commit()
@@ -632,6 +683,189 @@ def fetch_latest(location_id: str | None = None) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+
+def to_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def range_test_packet_from_ttn(payload: dict[str, Any]) -> dict[str, Any]:
+    uplink = payload.get("uplink_message") or {}
+    received_utc = parse_received_at(payload)
+    local_time = received_utc.astimezone(ZAGREB_TZ)
+
+    end_device_ids = payload.get("end_device_ids") or {}
+    device_id = end_device_ids.get("device_id") or payload.get("device_id") or "unknown-device"
+
+    rx_metadata = uplink.get("rx_metadata") or []
+    valid_gateways = [item for item in rx_metadata if isinstance(item, dict)]
+
+    best_gateway = None
+    if valid_gateways:
+        best_gateway = max(
+            valid_gateways,
+            key=lambda item: to_float(item.get("rssi")) if to_float(item.get("rssi")) is not None else -9999.0,
+        )
+
+    gateway_id = None
+    rssi = None
+    snr = None
+
+    if best_gateway:
+        gateway_ids = best_gateway.get("gateway_ids") or {}
+        gateway_id = gateway_ids.get("gateway_id") or gateway_ids.get("eui")
+        rssi = to_float(best_gateway.get("rssi"))
+        snr = to_float(best_gateway.get("snr"))
+
+    settings = uplink.get("settings") or {}
+    data_rate = settings.get("data_rate") or {}
+    lora = data_rate.get("lora") or {}
+
+    return {
+        "received_at_utc": received_utc.isoformat(),
+        "datum": local_time.strftime("%Y-%m-%d"),
+        "vrijeme": local_time.strftime("%H:%M:%S"),
+        "device_id": device_id,
+        "f_cnt": to_int(uplink.get("f_cnt")),
+        "gateway_id": gateway_id,
+        "rssi": rssi,
+        "snr": snr,
+        "spreading_factor": to_int(lora.get("spreading_factor")),
+        "bandwidth": to_int(lora.get("bandwidth")),
+        "frequency": to_int(settings.get("frequency")),
+    }
+
+
+def insert_range_test_packet(packet: dict[str, Any], raw_payload: dict[str, Any]) -> int:
+    with get_conn() as conn:
+        sql_sqlite = """
+            INSERT INTO range_test_packets
+            (received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id, rssi, snr,
+             spreading_factor, bandwidth, frequency, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        sql_postgres = """
+            INSERT INTO range_test_packets
+            (received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id, rssi, snr,
+             spreading_factor, bandwidth, frequency, raw_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        values = (
+            packet["received_at_utc"],
+            packet["datum"],
+            packet["vrijeme"],
+            packet["device_id"],
+            packet["f_cnt"],
+            packet["gateway_id"],
+            packet["rssi"],
+            packet["snr"],
+            packet["spreading_factor"],
+            packet["bandwidth"],
+            packet["frequency"],
+            json.dumps(raw_payload, ensure_ascii=False),
+        )
+
+        cur = execute(conn, sql_sqlite, values, sql_postgres)
+        if koristi_postgres():
+            packet_id = int(cur.fetchone()[0])
+        else:
+            packet_id = int(cur.lastrowid)
+        conn.commit()
+        return packet_id
+
+
+def row_to_range_test_packet(row: Any) -> dict[str, Any]:
+    return {
+        "id": row_value(row, "id"),
+        "received_at_utc": row_value(row, "received_at_utc"),
+        "datum": row_value(row, "datum"),
+        "vrijeme": row_value(row, "vrijeme"),
+        "device_id": row_value(row, "device_id"),
+        "f_cnt": row_value(row, "f_cnt"),
+        "gateway_id": row_value(row, "gateway_id"),
+        "rssi": row_value(row, "rssi"),
+        "snr": row_value(row, "snr"),
+        "spreading_factor": row_value(row, "spreading_factor"),
+        "bandwidth": row_value(row, "bandwidth"),
+        "frequency": row_value(row, "frequency"),
+        "mobile_lat": row_value(row, "mobile_lat"),
+        "mobile_lon": row_value(row, "mobile_lon"),
+        "distance_m": row_value(row, "distance_m"),
+        "gps_accuracy_m": row_value(row, "gps_accuracy_m"),
+    }
+
+
+def fetch_range_test_packets(limit: int = 100) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                """
+                SELECT id, received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id,
+                       rssi, snr, spreading_factor, bandwidth, frequency,
+                       mobile_lat, mobile_lon, distance_m, gps_accuracy_m
+                FROM range_test_packets
+                ORDER BY received_at_utc DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+        else:
+            rows = execute(
+                conn,
+                """
+                SELECT id, received_at_utc, datum, vrijeme, device_id, f_cnt, gateway_id,
+                       rssi, snr, spreading_factor, bandwidth, frequency,
+                       mobile_lat, mobile_lon, distance_m, gps_accuracy_m
+                FROM range_test_packets
+                ORDER BY received_at_utc DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+    return [row_to_range_test_packet(row) for row in rows]
+
+
+def fetch_latest_range_test_packet() -> dict[str, Any] | None:
+    packets = fetch_range_test_packets(1)
+    return packets[0] if packets else None
+
+
+def update_range_test_position(packet_id: int, lat: float, lon: float, distance_m: float, accuracy_m: float | None) -> bool:
+    with get_conn() as conn:
+        if koristi_postgres():
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE range_test_packets
+                SET mobile_lat = %s, mobile_lon = %s, distance_m = %s, gps_accuracy_m = %s
+                WHERE id = %s
+                """,
+                (lat, lon, distance_m, accuracy_m, packet_id),
+            )
+        else:
+            cur = execute(
+                conn,
+                """
+                UPDATE range_test_packets
+                SET mobile_lat = ?, mobile_lon = ?, distance_m = ?, gps_accuracy_m = ?
+                WHERE id = ?
+                """,
+                (lat, lon, distance_m, accuracy_m, packet_id),
+            )
+
+        changed = cur.rowcount > 0
+        conn.commit()
+        return changed
+
 def valid_ttn_token() -> bool:
     if not OPTIONAL_TOKEN:
         return True
@@ -657,6 +891,17 @@ def ttn_webhook():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"ok": False, "error": "Webhook mora poslati JSON."}), 400
+
+    uplink = payload.get("uplink_message") or {}
+    f_port = to_int(uplink.get("f_port")) or 0
+
+    # FPort 2 je rezerviran za test dometa.
+    # Ti paketi se spremaju odvojeno i ne ulaze u redovna mjerenja.
+    if f_port == 2:
+        packet = range_test_packet_from_ttn(payload)
+        packet_id = insert_range_test_packet(packet, payload)
+        packet["id"] = packet_id
+        return jsonify({"ok": True, "range_test": True, "packet": packet}), 200
 
     try:
         measurement = measurement_from_ttn(payload)
@@ -737,6 +982,49 @@ def api_latest():
     location_id = request.args.get("location_id")
     return jsonify(fetch_latest(location_id) or {})
 
+
+
+@app.route("/api/range-test", methods=["GET"])
+def api_range_test():
+    limit = request.args.get("limit", "100")
+
+    try:
+        limit_int = min(max(int(limit), 1), 1000)
+    except ValueError:
+        limit_int = 100
+
+    return jsonify(fetch_range_test_packets(limit_int))
+
+
+@app.route("/api/range-test/latest", methods=["GET"])
+def api_range_test_latest():
+    return jsonify(fetch_latest_range_test_packet() or {})
+
+
+@app.route("/api/range-test/<int:packet_id>/position", methods=["POST"])
+def api_range_test_position(packet_id: int):
+    data = request.get_json(silent=True) or {}
+
+    try:
+        lat = float(data.get("lat"))
+        lon = float(data.get("lon"))
+        distance_m = float(data.get("distance_m"))
+        accuracy_raw = data.get("accuracy_m")
+        accuracy_m = float(accuracy_raw) if accuracy_raw not in (None, "") else None
+
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError("GPS koordinate nisu ispravne.")
+        if distance_m < 0:
+            raise ValueError("Udaljenost ne može biti negativna.")
+        if accuracy_m is not None and accuracy_m < 0:
+            raise ValueError("GPS točnost ne može biti negativna.")
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    if not update_range_test_position(packet_id, lat, lon, distance_m, accuracy_m):
+        return jsonify({"ok": False, "error": "Testni paket nije pronađen."}), 404
+
+    return jsonify({"ok": True, "id": packet_id})
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
