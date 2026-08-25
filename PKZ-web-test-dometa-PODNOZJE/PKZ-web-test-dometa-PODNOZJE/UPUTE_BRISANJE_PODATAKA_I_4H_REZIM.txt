@@ -1,0 +1,23 @@
+BRISANJE STARIH PODATAKA U NEON BAZI
+
+1. Otvori Neon projekt.
+2. Lijevo klikni SQL Editor.
+3. Pokreni naredbu:
+
+TRUNCATE TABLE measurements RESTART IDENTITY;
+
+Time se brišu sva stara mjerenja i resetira se ID brojač.
+
+NAPOMENA ZA 4-SATNI REŽIM MJERENJA
+
+Web status je podešen tako da je sustav aktivan ako je zadnje mjerenje unutar očekivanog intervala slanja od 4 sata + 30 minuta tolerancije.
+
+Preporučeni ciklus senzorskog čvora:
+1. ESP32 se probudi iz deep sleepa.
+2. Uključi senzore ili probudi SDS021.
+3. Pričekaj stabilizaciju senzora.
+4. Napravi više mjerenja.
+5. Izračunaj prosjek.
+6. Pošalji jedan LoRaWAN uplink.
+7. Uspavaj SDS021 / isključi napajanje senzora ako koristiš MOSFET.
+8. ESP32 ide u deep sleep na 4 sata.
