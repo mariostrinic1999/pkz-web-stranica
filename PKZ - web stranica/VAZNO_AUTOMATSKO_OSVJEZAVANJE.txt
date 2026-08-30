@@ -1,8 +1,0 @@
-U ovoj verziji 4 sata se koristi samo za status aktivan/neaktivan, ne za dohvat podataka.
-
-Stranica provjerava /api/latest svakih 30 sekundi.
-Ako se pojavi novo mjerenje u Neon bazi, stranica se automatski osvježi i učita nove podatke iz /data.js.
-
-Probni/demo podaci su isključeni. Ako je baza prazna, prikazuje se da nema mjerenja.
-
-Iz ZIP-a su uklonjeni .venv i mjerenja.db.
