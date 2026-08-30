@@ -1,3 +1,0 @@
-Ova verzija ne sadrži .venv ni lokalnu mjerenja.db datoteku.
-Frontend ne generira probne podatke kada je Neon baza prazna.
-Nakon TRUNCATE i deploya stranica prikazuje prazno stanje dok ne dođe stvarno TTN mjerenje.
