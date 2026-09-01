@@ -1827,19 +1827,22 @@ tbody tr:hover {
 }
 
 
-/* Test dometa - poveznica je namjerno samo u PODNOŽJU stranice. */
+/* Test dometa - poveznica u podnožju stranice */
 .footer-test-line {
     margin-top: 10px !important;
 }
 
-.footer-bottom .footer-test-link {
+.footer .footer-test-link,
+.footer .footer-test-link:visited {
     display: inline-block;
-    color: #ffffff;
-    font-weight: 700;
-    text-decoration: underline;
+    color: #94a3b8;
+    font-weight: 400;
+    text-decoration: none;
     text-underline-offset: 3px;
 }
 
-.footer-bottom .footer-test-link:hover {
-    color: #dbeafe;
+.footer .footer-test-link:hover,
+.footer .footer-test-link:focus-visible {
+    color: #cbd5e1;
+    text-decoration: underline;
 }
